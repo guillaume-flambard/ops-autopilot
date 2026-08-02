@@ -1,0 +1,41 @@
+{
+  "tasks": [
+    {
+      "task": "Churn outreach emails",
+      "hours_per_month": 18.0417,
+      "eur_per_month": 811.875,
+      "etp": 0.119,
+      "priority_score": 14.4333,
+      "roi_rank": 1
+    },
+    {
+      "task": "Feature request triage",
+      "hours_per_month": 21.65,
+      "eur_per_month": 974.25,
+      "etp": 0.1427,
+      "priority_score": 7.794,
+      "roi_rank": 2
+    },
+    {
+      "task": "Onboarding calls",
+      "hours_per_month": 21.65,
+      "eur_per_month": 974.25,
+      "etp": 0.1427,
+      "priority_score": 5.196,
+      "roi_rank": 3
+    },
+    {
+      "task": "Documentation updates",
+      "hours_per_month": 8.66,
+      "eur_per_month": 389.7,
+      "etp": 0.0571,
+      "priority_score": 2.0784,
+      "roi_rank": 4
+    }
+  ],
+  "totals": {
+    "total_hours_per_month": 70.0017,
+    "total_eur_per_month": 3150.075,
+    "total_etp": 0.4615
+  }
+}

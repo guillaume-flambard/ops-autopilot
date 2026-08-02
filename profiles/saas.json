@@ -1,0 +1,43 @@
+{
+  "name": "Generic SaaS",
+  "sector": "SaaS",
+  "team_size": 15,
+  "channels": ["Intercom", "Slack", "Email", "Documentation"],
+  "notes": "B2B SaaS sample profile for preset picker and map_tasks tests.",
+  "free_text": "Onboarding calls: 10/week, 30 min each, medium repetitive. Churn outreach emails: 50/week, 5 min each, highly repetitive. Documentation updates: weekly, 2 hours, low repetitive. Feature request triage: 30/week, 10 min each, medium repetitive.",
+  "tasks": [
+    {
+      "name": "Onboarding calls",
+      "volume_per_week": 10,
+      "minutes_per_unit": 30,
+      "repetitiveness": 3,
+      "automatability": 2
+    },
+    {
+      "name": "Churn outreach emails",
+      "volume_per_week": 50,
+      "minutes_per_unit": 5,
+      "repetitiveness": 5,
+      "automatability": 4
+    },
+    {
+      "name": "Documentation updates",
+      "volume_per_week": 1,
+      "minutes_per_unit": 120,
+      "repetitiveness": 2,
+      "automatability": 3
+    },
+    {
+      "name": "Feature request triage",
+      "volume_per_week": 30,
+      "minutes_per_unit": 10,
+      "repetitiveness": 3,
+      "automatability": 3
+    }
+  ],
+  "default_assumptions": {
+    "hourly_rate_eur": 45,
+    "weeks_per_month": 4.33,
+    "locale": "fr"
+  }
+}

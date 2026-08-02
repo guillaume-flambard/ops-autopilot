@@ -1,0 +1,43 @@
+{
+  "name": "Lumea",
+  "sector": "D2C",
+  "team_size": 12,
+  "channels": ["Instagram", "Shopify", "Email"],
+  "notes": "D2C cosmetics brand. Sample demo profile used for the interview walkthrough.",
+  "free_text": "Instagram DM responses: ~50/day, 2 min each, highly repetitive. Shopify order processing: ~100/day, 3 min each, medium repetitive. Email support tickets: ~20/day, 10 min each, low repetitive. Product photography planning: weekly, 60 min, low repetitive.",
+  "tasks": [
+    {
+      "name": "Instagram DM responses",
+      "volume_per_week": 350,
+      "minutes_per_unit": 2,
+      "repetitiveness": 5,
+      "automatability": 4
+    },
+    {
+      "name": "Shopify order processing",
+      "volume_per_week": 700,
+      "minutes_per_unit": 3,
+      "repetitiveness": 3,
+      "automatability": 4
+    },
+    {
+      "name": "Email support tickets",
+      "volume_per_week": 140,
+      "minutes_per_unit": 10,
+      "repetitiveness": 2,
+      "automatability": 3
+    },
+    {
+      "name": "Product photography planning",
+      "volume_per_week": 1,
+      "minutes_per_unit": 60,
+      "repetitiveness": 1,
+      "automatability": 1
+    }
+  ],
+  "default_assumptions": {
+    "hourly_rate_eur": 35,
+    "weeks_per_month": 4.33,
+    "locale": "fr"
+  }
+}

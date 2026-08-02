@@ -1,0 +1,41 @@
+{
+  "tasks": [
+    {
+      "task": "Shopify order processing",
+      "hours_per_month": 151.55,
+      "eur_per_month": 5304.25,
+      "etp": 0.9992,
+      "priority_score": 72.744,
+      "roi_rank": 1
+    },
+    {
+      "task": "Instagram DM responses",
+      "hours_per_month": 50.5167,
+      "eur_per_month": 1768.0833,
+      "etp": 0.3331,
+      "priority_score": 40.4133,
+      "roi_rank": 2
+    },
+    {
+      "task": "Email support tickets",
+      "hours_per_month": 101.0333,
+      "eur_per_month": 3536.1667,
+      "etp": 0.6661,
+      "priority_score": 24.248,
+      "roi_rank": 3
+    },
+    {
+      "task": "Product photography planning",
+      "hours_per_month": 4.33,
+      "eur_per_month": 151.55,
+      "etp": 0.0285,
+      "priority_score": 0.1732,
+      "roi_rank": 4
+    }
+  ],
+  "totals": {
+    "total_hours_per_month": 307.43,
+    "total_eur_per_month": 10760.05,
+    "total_etp": 2.027
+  }
+}
