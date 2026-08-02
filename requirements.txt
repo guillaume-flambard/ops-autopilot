@@ -1,26 +1,29 @@
-# Core dependencies
-streamlit==1.39.0
-langgraph==0.2.45
-langchain==0.3.7
-langchain-core==0.3.15
-langchain-community==0.3.5
+# Ops Autopilot - verified working dependency set (construction steps 1-4)
+# Rebuilt 2026-08-02 from the active venv; matches uv-resolved versions.
+
+# LangGraph (>=0.4 required for interrupt / Command(resume=...))
+langgraph==0.4.10
+langgraph-checkpoint-sqlite==3.1.1
+
+# CrewAI deep-dive (step 3)
 crewai==0.80.0
-sqlalchemy==2.0.36
-pydantic==2.9.2
-pydantic-settings==2.6.1
+# crewai 0.80 still imports pkg_resources; modern setuptools removed it
+setuptools<80
 
 # LLM clients
-ollama==0.4.0
 groq==0.11.0
 
-# Auth & security
-passlib==1.7.4
-bcrypt==4.2.1
-
-# Configuration & utilities
-python-dotenv==1.0.1
-python-jose[cryptography]==3.3.0
+# Domain config
+pydantic==2.13.4
+pydantic-settings==2.14.2
+python-dotenv==1.2.2
 
 # Development & testing
-pytest==8.3.3
-pytest-asyncio==0.24.0
+pytest==9.1.1
+
+# ---------------------------------------------------------------------------
+# Future steps (not yet implemented - do NOT pin until the step lands):
+#   step 5 UI : streamlit
+#   step 6    : sqlalchemy, passlib, bcrypt, python-jose[cryptography]
+#   (legacy)  : ollama
+# langchain / langchain-core are transitive deps of crewai+langgraph; do not pin.

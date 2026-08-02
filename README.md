@@ -1,6 +1,6 @@
 # Ops Autopilot
 
-An assistant that analyzes a brand's operations, quantifies where time and money go, and recommends *what to automate first* — with a concrete implementation plan and estimated ROI.
+An assistant that analyzes a brand's operations, quantifies where time and money go, and recommends *what to automate first* - with a concrete implementation plan and estimated ROI.
 
 ## Features
 
@@ -9,7 +9,7 @@ An assistant that analyzes a brand's operations, quantifies where time and money
 - **Human in the loop**: Must approve/edit/reject before final report
 - **Small-team product**: Email/password auth, analysis history, centralized config
 - **Bilingual**: FR and EN UI + reports with locale toggle
-- **Local LLM**: Uses Ollama (Llama 3.2 3B) with Groq fallback
+- **LLM**: Groq free tier with retry/backoff, plus a deterministic offline fallback (mock)
 - **Clean architecture**: Domain rules readable without opening LangGraph
 
 ## Quick Start
@@ -17,41 +17,16 @@ An assistant that analyzes a brand's operations, quantifies where time and money
 ### Prerequisites
 
 - Python 3.11+
-- Ollama (for local LLM)
-- Groq API key (optional, as fallback)
+- Groq API key (optional; without it the app runs in offline mock mode)
 
-### 1. Install Ollama
-
-**On Mac:**
-```bash
-# Using Homebrew
-brew install ollama
-
-# Or download from https://ollama.ai
-```
-
-**Start Ollama:**
-```bash
-ollama serve
-```
-
-**Pull Llama 3.2 3B model:**
-```bash
-ollama pull llama3.2:3b
-```
-
-**Test Ollama:**
-```bash
-ollama run llama3.2:3b "Hello, test response"
-```
-
-### 2. Install Python Dependencies
+### 1. Install Python Dependencies
 
 ```bash
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 3. Configure Environment
+### 2. Configure Environment
 
 ```bash
 cp .env.example .env
@@ -60,25 +35,30 @@ cp .env.example .env
 
 Required variables:
 - `APP_SECRET`: Secret for session and password hashing
-- `GROQ_API_KEY`: Your Groq API key (fallback)
 
 Optional variables (defaults shown):
-- `OLLAMA_BASE_URL=http://localhost:11434`
-- `OLLAMA_MODEL=llama3.2:3b`
+- `GROQ_API_KEY` (optional; enables live LLM instead of the mock fallback)
+- `GROQ_MODEL=llama-3.3-70b-versatile`
 - `DATABASE_URL=sqlite:///./ops_autopilot.db`
 - `DEFAULT_LOCALE=fr`
-- `LLM_PROVIDER=ollama`
+- `LLM_PROVIDER=mock` (`mock` or `groq`)
 
-### 4. Run the Application
+### 3. Run the Application
 
-**Streamlit UI:**
+**CLI (no UI, mock LLM works offline):**
+```bash
+python -m graph.cli run --preset lumea --non-interactive
+python -m graph.cli run --preset saas
+python -m graph.cli run --name "Acme" --sector D2C --free-text "Instagram DMs: ~50/day, 2 min each, highly repetitive."
+```
+Each run pauses at the human review (`a`/`m`/`r`), persists state to
+`ops_autopilot_checkpoints.db` (`--checkpoint-db` to change), and resumes the same
+thread via LangGraph's `interrupt` / `Command(resume=...)`. Use `--groq-api-key` /
+`--groq-model` to enable live LLM calls.
+
+**Streamlit UI (construction order step 5, not yet implemented):**
 ```bash
 streamlit run ui/app.py
-```
-
-**CLI (for testing):**
-```bash
-python graph/cli.py run --preset lumea
 ```
 
 ## Architecture
@@ -87,7 +67,7 @@ python graph/cli.py run --preset lumea
 ops-autopilot/
   domain/           # Pure business rules (no LangGraph / CrewAI / Streamlit)
     models.py       # Brand, Task, Score, Recommendation, Assumptions
-    scoring.py      # ROI formulas — unit-testable without LLM
+    scoring.py      # ROI formulas - unit-testable without LLM
     formulas.md     # Human-readable formula docs
 
   app/              # Use cases
@@ -102,13 +82,16 @@ ops-autopilot/
     build.py        # Compile + checkpointer
 
   crew/             # CrewAI adapter (called ONLY by deep_dive)
-    agents.py
+    agents.py       # Ops Analyst -> ROI Estimator -> Solution Architect
     tasks.py
     run_deep_dive.py
 
-  llm/              # Ollama + Groq client + retry + fallback
-  db/               # SQLite repositories; Postgres-ready schema
-  ui/               # Thin Streamlit layer
+  llm/              # Groq client + retry/backoff + deterministic mock fallback
+    client.py
+    prompts.py
+  graph/checkpointer.py # JsonPlus serde + Pydantic-safe SQLite saver [step 4]
+  db/               # SQLite repositories; Postgres-ready schema [step 6]
+  ui/               # Thin Streamlit layer [step 5]
   profiles/         # Lumea (D2C), SaaS presets
   tests/
   docs/
@@ -134,11 +117,22 @@ pytest tests/domain/
 pytest tests/graph/
 ```
 
+## Construction order
+
+Per design spec `docs/superpowers/specs/2026-08-01-ops-autopilot-design.md`:
+
+1. ✅ Domain layer (models, scoring, formulas) + presets
+2. ✅ LangGraph CLI with prints, mocked LLM fallback (offline)
+3. ✅ CrewAI inside `deep_dive` (testable in isolation; degrades offline)
+4. ✅ Checkpointer + `interrupt` / `Command(resume=...)` (SQLite, `--checkpoint-db`)
+5. ⏳ Streamlit UI
+6. ⏳ Auth, history, DB repositories
+
 ## Interview Demo
 
 ~6 minutes: problem → Lumea input → live analysis / crew → human checkpoint (edit rate, approve) → final report → trade-offs.
 
-Product rule: **the agent never alone finalizes figures that commit budget** — human review is mandatory.
+Product rule: **the agent never alone finalizes figures that commit budget** - human review is mandatory.
 
 ## License
 
