@@ -1,4 +1,4 @@
-# Ops Autopilot - verified working dependency set (construction steps 1-4)
+# Ops Autopilot - verified working dependency set (construction steps 1-5)
 # Rebuilt 2026-08-02 from the active venv; matches uv-resolved versions.
 
 # LangGraph (>=0.4 required for interrupt / Command(resume=...))
@@ -13,6 +13,9 @@ setuptools<80
 # LLM clients
 groq==0.11.0
 
+# Streamlit UI (step 5)
+streamlit==1.60.0
+
 # Domain config
 pydantic==2.13.4
 pydantic-settings==2.14.2
@@ -23,7 +26,6 @@ pytest==9.1.1
 
 # ---------------------------------------------------------------------------
 # Future steps (not yet implemented - do NOT pin until the step lands):
-#   step 5 UI : streamlit
 #   step 6    : sqlalchemy, passlib, bcrypt, python-jose[cryptography]
 #   (legacy)  : ollama
 # langchain / langchain-core are transitive deps of crewai+langgraph; do not pin.

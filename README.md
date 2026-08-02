@@ -56,10 +56,13 @@ Each run pauses at the human review (`a`/`m`/`r`), persists state to
 thread via LangGraph's `interrupt` / `Command(resume=...)`. Use `--groq-api-key` /
 `--groq-model` to enable live LLM calls.
 
-**Streamlit UI (construction order step 5, not yet implemented):**
+**Streamlit UI (construction order step 5):**
 ```bash
 streamlit run ui/app.py
 ```
+Form (preset or custom brand + assumptions) → live timeline → human review
+(Approver / Modifier / Rejeter) → final report. State persists in
+`ops_autopilot_checkpoints.db`, so a page refresh resumes the same thread.
 
 ## Architecture
 
@@ -90,8 +93,10 @@ ops-autopilot/
     client.py
     prompts.py
   graph/checkpointer.py # JsonPlus serde + Pydantic-safe SQLite saver [step 4]
+  graph/driver.py    # Shared stream-until-interrupt driver (CLI + UI)
   db/               # SQLite repositories; Postgres-ready schema [step 6]
   ui/               # Thin Streamlit layer [step 5]
+    app.py          # Form -> review -> report, Approve/Edit/Reject
   profiles/         # Lumea (D2C), SaaS presets
   tests/
   docs/
@@ -125,7 +130,7 @@ Per design spec `docs/superpowers/specs/2026-08-01-ops-autopilot-design.md`:
 2. ✅ LangGraph CLI with prints, mocked LLM fallback (offline)
 3. ✅ CrewAI inside `deep_dive` (testable in isolation; degrades offline)
 4. ✅ Checkpointer + `interrupt` / `Command(resume=...)` (SQLite, `--checkpoint-db`)
-5. ⏳ Streamlit UI
+5. ✅ Streamlit UI (form, timeline, review Approve/Edit/Reject, final report)
 6. ⏳ Auth, history, DB repositories
 
 ## Interview Demo

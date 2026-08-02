@@ -21,6 +21,7 @@ from llm.client import get_client
 from domain.models import Assumptions, BrandProfile, Sector
 from graph.build import build_graph
 from graph.checkpointer import sqlite_checkpointer
+from graph.driver import drive
 
 PROFILES_DIR = Path(__file__).resolve().parents[1] / "profiles"
 
@@ -85,16 +86,9 @@ def _crew_llm(args):
 
 def _drive(app, config, payload):
     """Stream one graph run. Returns (accumulated state, interrupt payload or None)."""
-    final: dict = {}
-    interrupted = None
-    for chunk in app.stream(payload, config=config):
-        for key, update in chunk.items():
-            if key == "__interrupt__":
-                interrupted = update[0].value
-            else:
-                for event in update.get("events", []):
-                    print(f"  [{key}] {event}")
-                final.update(update)
+    final, events, interrupted = drive(app, config, payload)
+    for node, event in events:
+        print(f"  [{node}] {event}")
     return final, interrupted
 
 
@@ -126,11 +120,6 @@ def run(args) -> int:
         print("\n=== RAPPORT FINAL ===")
         print(final["report"])
     return 0
-
-
-def _final_state(app, thread: dict) -> dict:
-    snapshot = app.get_state(thread)
-    return dict(snapshot.values)
 
 
 def main(argv=None) -> int:
