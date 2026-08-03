@@ -215,6 +215,18 @@ def test_website_source_renders_url_field(at: AppTest) -> None:
     assert "Lancer l'analyse" in [b.label for b in at.button]
 
 
+def test_website_source_defaults_to_groq_when_key_present(at: AppTest, monkeypatch: pytest.MonkeyPatch) -> None:
+    import ui.app as ui_app
+
+    monkeypatch.setattr(ui_app.settings, "groq_api_key", "test-key")
+    _radio(at, "Source").set_value("Site web (URL)")
+    at.run()
+    provider = next(sb.value for sb in at.selectbox if sb.label == "Fournisseur")
+    assert provider == "groq", "site source with a groq key must default to groq"
+    captions = [c.value for c in at.caption]
+    assert any("groq" in c for c in captions), "site source must show the groq hint"
+
+
 def test_history_page_shows_persisted_analyses(at: AppTest) -> None:
     _button(at, "Lancer l'analyse").click().run()
     _button(at, "Approuver").click().run()

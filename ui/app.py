@@ -90,6 +90,7 @@ T = {
         "edit_volume": "volume / semaine",
         "edit_minutes": "min / unite",
         "estimate_badge": "estimation a confirmer",
+        "site_groq_hint": "Conseil : groq (70B) est plus fiable et rapide que le modele local pour analyser un site.",
         "steps": "Etapes",
         "report": "Rapport final",
         "rejected": "Analyse rejetee, aucun rapport genere.",
@@ -149,6 +150,7 @@ T = {
         "edit_volume": "volume / week",
         "edit_minutes": "min / unit",
         "estimate_badge": "estimate to confirm",
+        "site_groq_hint": "Tip: groq (70B) is more reliable and faster than the local model for site analysis.",
         "steps": "Steps",
         "report": "Final report",
         "rejected": "Analysis rejected, no report generated.",
@@ -453,7 +455,11 @@ def _render_analysis(labels: dict) -> None:
         if not settings.groq_api_key:
             providers.remove("groq")
         default_provider = settings.llm_provider if settings.llm_provider in providers else "mock"
+        if source == labels["website"] and settings.groq_api_key and "groq" in providers:
+            default_provider = "groq"  # site analysis is richer/faster on a large model
         provider = st.selectbox(labels["provider"], providers, index=providers.index(default_provider))
+        if source == labels["website"] and settings.groq_api_key and provider == "groq":
+            st.caption(labels["site_groq_hint"])
         api_key = settings.groq_api_key
         model = settings.groq_model
         ollama_base_url = settings.ollama_base_url
