@@ -9,7 +9,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from llm.client import MockClient, OllamaClient, _strip_html, fetch_page_text
+from llm.client import MockClient, OllamaClient, _strip_html, crawl_site_pages, fetch_page_text
 
 
 def _fake_page(payload: bytes) -> httpx.Response:
@@ -39,6 +39,30 @@ def test_fetch_page_text_raises_on_http_error(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr("llm.client.httpx.get", lambda *a, **k: _Error())
     with pytest.raises(httpx.HTTPStatusError):
         fetch_page_text("https://shop.test")
+
+
+def test_crawl_site_pages_aggregates_and_dedupes(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _fake_get(url, **k):
+        if url.endswith("/contact"):
+            return _fake_page(b"<p>Contact us by email at support@shop.test</p>")
+        return _fake_page(b"<p>Shop sells tea. Free shipping over 40.</p>")
+
+    monkeypatch.setattr("llm.client.httpx.get", _fake_get)
+    text = crawl_site_pages("https://shop.test", max_pages=3)
+    assert "=== home ===" in text
+    assert "=== contact ===" in text
+    assert "support@shop.test" in text
+    assert "shipping" in text
+    # duplicate home pages (about vs home identical) must be collapsed
+    assert text.count("=== home ===") == 1
+
+
+def test_crawl_site_pages_skips_failing_pages(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _boom(*a, **k):
+        raise ConnectionError("refused")
+
+    monkeypatch.setattr("llm.client.httpx.get", _boom)
+    assert crawl_site_pages("https://shop.test") == ""
 
 
 def test_mock_analyze_website_parses_structured_free_text(monkeypatch: pytest.MonkeyPatch) -> None:

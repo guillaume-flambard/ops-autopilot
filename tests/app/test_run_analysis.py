@@ -79,6 +79,22 @@ def test_resume_edit_rescores_with_new_rate(runtime) -> None:
     assert full["assumptions"].hourly_rate_eur == 90.0
 
 
+def test_resume_edit_rescores_with_edited_tasks(runtime) -> None:
+    """The human can correct task volumes before approving (website workflow)."""
+    brand, assumptions = _lumea()
+    result = run_analysis(brand, assumptions, runtime)
+    full = runtime.app.get_state(result.config).values
+    first = full["tasks"][0]
+    corrected = [first.model_copy(update={"volume_per_week": 100.0})]
+    re_scored = resume_review(runtime, result.config, "edit", tasks=corrected)
+    assert re_scored.interrupted is not None, "edited tasks need a second review"
+    after = runtime.app.get_state(result.config).values
+    assert after["tasks"][0].volume_per_week == 100.0
+    assert after["scored_tasks"][0].task.volume_per_week == 100.0
+    approved = resume_review(runtime, result.config, "approve")
+    assert approved.final["report"]
+
+
 def test_list_history_delegates_to_repo() -> None:
     init_db(DB_URL)
     try:

@@ -97,6 +97,11 @@ def review_payload(state: dict) -> dict:
             {
                 "rank": s.roi_rank,
                 "task": s.task.name,
+                "volume_per_week": s.task.volume_per_week,
+                "minutes_per_unit": s.task.minutes_per_unit,
+                "repetitiveness": s.task.repetitiveness,
+                "automatability": s.task.automatability,
+                "evidence": s.task.evidence,
                 "hours_per_month": round(s.hours_per_month, 1),
                 "eur_per_month": round(s.eur_per_month, 0),
                 "priority_score": round(s.priority_score, 1),

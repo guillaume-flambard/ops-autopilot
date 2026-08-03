@@ -40,21 +40,31 @@ REPORT_EXECUTIVE_PROMPT = {
 
 ANALYZE_WEBSITE_PROMPT = {
     "fr": (
-        "Tu es un analyste d'operations. Analyse le site web d'une marque et reponds en JSON avec "
-        "cet objet exact : {{\"name\": \"nom de la marque\", \"sector\": \"D2C|SaaS|Agency|Other\", "
-        "\"team_size\": entier, \"free_text\": \"description des operations en 2-3 phrases\", "
+        "Tu es un analyste d'operations. Analyse les pages d'un site web et reponds en JSON avec cet objet exact : "
+        "{{\"name\": \"nom de la marque\", \"sector\": \"D2C|SaaS|Agency|Other\", "
+        "\"team_size\": entier (n'invente pas : 0 si inconnu), "
+        "\"free_text\": \"description factuelle des operations observees sur le site\", "
         "\"tasks\": [{{\"name\": \"tache courte\", \"volume_per_week\": nombre, \"minutes_per_unit\": nombre, "
-        "\"repetitiveness\": entier 1-5, \"automatability\": entier 1-5}}]}}. "
-        "Infer 3-6 taches operationnelles reelles (support, logistique, marketing manuel, admin...). "
-        "Ne reponds qu'avec le JSON.\n\nSite : {url}\n\nContenu de la page :\n{page}"
+        "\"repetitiveness\": entier 1-5, \"automatability\": entier 1-5, "
+        "\"evidence\": \"ce qui a ete observe sur le site, ou 'estimate'\"}}]}}. "
+        "REGLE STRICTE : n'invente AUCUN volume ni duree. Si le site ne donne pas de chiffre pour une tache, "
+        "mets volume_per_week=0 et minutes_per_unit=0 et evidence='estimate' (l'humain confirmera). "
+        "Extrais 2-5 taches RELLEMENT observees (canal de support, process de commande/livraison visible, FAQ, "
+        "contact, retours...). Si rien d'operationnel n'est visible, renvoie tasks=[]. "
+        "Ne reponds qu'avec le JSON.\n\nSite : {url}\n\nContenu des pages :\n{page}"
     ),
     "en": (
-        "You are an operations analyst. Analyze a brand's website and answer as JSON with this exact "
-        "object: {{\"name\": \"brand name\", \"sector\": \"D2C|SaaS|Agency|Other\", "
-        "\"team_size\": integer, \"free_text\": \"2-3 sentence description of operations\", "
+        "You are an operations analyst. Analyze a brand's website pages and answer as JSON with this exact object: "
+        "{{\"name\": \"brand name\", \"sector\": \"D2C|SaaS|Agency|Other\", "
+        "\"team_size\": integer (do not invent: 0 if unknown), "
+        "\"free_text\": \"factual description of operations observed on the site\", "
         "\"tasks\": [{{\"name\": \"short task\", \"volume_per_week\": number, \"minutes_per_unit\": number, "
-        "\"repetitiveness\": integer 1-5, \"automatability\": integer 1-5}}]}}. "
-        "Infer 3-6 real operational tasks (support, logistics, manual marketing, admin...). "
+        "\"repetitiveness\": integer 1-5, \"automatability\": integer 1-5, "
+        "\"evidence\": \"what was observed on the site, or 'estimate'\"}}]}}. "
+        "STRICT RULE: do not invent any volume or duration. If the site gives no figure for a task, "
+        "set volume_per_week=0 and minutes_per_unit=0 and evidence='estimate' (a human will confirm). "
+        "Extract 2-5 tasks that are ACTUALLY observed (support channel, visible order/delivery process, FAQ, "
+        "contact, returns...). If nothing operational is visible, return tasks=[]. "
         "Respond with the JSON only.\n\nSite: {url}\n\nPage content:\n{page}"
     ),
 }

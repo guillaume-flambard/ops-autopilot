@@ -62,6 +62,10 @@ class Task(BaseModel):
     minutes_per_unit: float = Field(ge=0, description="Minutes spent per unit")
     repetitiveness: int = Field(ge=1, le=5, description="1=creative/unpredictable, 5=identical every time")
     automatability: int = Field(ge=1, le=5, description="1=needs human judgment, 5=trivially automatable")
+    evidence: str = Field(
+        default="",
+        description="Source of this task: what the analysis observed, or 'estimate' when inferred",
+    )
 
 
 class ScoredTask(BaseModel):

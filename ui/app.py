@@ -25,7 +25,7 @@ from app.list_history import list_history
 from app.presets import load_preset
 from app.run_analysis import build_runtime, resume_review, run_analysis
 from config import settings
-from domain.models import Assumptions, BrandProfile, Locale, Sector
+from domain.models import Assumptions, BrandProfile, Locale, Sector, Task
 from db.repo import (
     authenticate,
     checkpoint_db_path,
@@ -86,6 +86,10 @@ T = {
         "edit_hint": "Modifier le taux horaire puis re-scorer",
         "new_rate": "Nouveau taux horaire (EUR)",
         "rescore": "Re-scorer avec ce taux",
+        "edit_tasks_hint": "Corriger les volumes / durees des taches (issus de l'analyse ou a confirmer)",
+        "edit_volume": "volume / semaine",
+        "edit_minutes": "min / unite",
+        "estimate_badge": "estimation a confirmer",
         "steps": "Etapes",
         "report": "Rapport final",
         "rejected": "Analyse rejetee, aucun rapport genere.",
@@ -141,6 +145,10 @@ T = {
         "edit_hint": "Change the hourly rate, then re-score",
         "new_rate": "New hourly rate (EUR)",
         "rescore": "Re-score with this rate",
+        "edit_tasks_hint": "Correct task volumes / durations (from the analysis, or to be confirmed)",
+        "edit_volume": "volume / week",
+        "edit_minutes": "min / unit",
+        "estimate_badge": "estimate to confirm",
         "steps": "Steps",
         "report": "Final report",
         "rejected": "Analysis rejected, no report generated.",
@@ -199,7 +207,12 @@ def _launch(
     )
 
 
-def _resume(action: str, rate: float | None = None, locale: str | None = None) -> None:
+def _resume(
+    action: str,
+    rate: float | None = None,
+    locale: str | None = None,
+    tasks: list[Task] | None = None,
+) -> None:
     runtime = st.session_state.get("runtime")
     if runtime is None:
         runtime = _build(
@@ -218,7 +231,7 @@ def _resume(action: str, rate: float | None = None, locale: str | None = None) -
             weeks_per_month=current["weeks_per_month"],
             locale=Locale(locale or current["locale"]),
         )
-    result = resume_review(runtime, config, action, assumptions=edit_assumptions)
+    result = resume_review(runtime, config, action, assumptions=edit_assumptions, tasks=tasks)
     final, events, interrupted = result.final, result.events, result.interrupted
     st.session_state["events"].extend(events)
     st.session_state["final"].update(final)
@@ -283,6 +296,12 @@ def _render_review(labels: dict) -> None:
     ]
     st.dataframe(rows, hide_index=True, width="stretch")
 
+    for r in payload["scored_tasks"]:
+        if r.get("evidence") and r.get("evidence") != "estimate":
+            st.caption(f"{labels['task']} '{r['task']}' : {r['evidence']}")
+        elif r.get("evidence") == "estimate":
+            st.caption(f"{labels['task']} '{r['task']}' : ⚠️ {labels['estimate_badge']}")
+
     st.markdown(f"#### {labels['dives']}")
     for dive in payload["deep_dives"]:
         badge = f" ⚠️ {labels['degraded']}" if dive["degraded"] else ""
@@ -309,6 +328,34 @@ def _render_review(labels: dict) -> None:
             new_rate = st.number_input(labels["new_rate"], min_value=1.0, value=float(current_rate))
             if st.button(labels["rescore"]):
                 _resume("edit", rate=new_rate, locale=payload["assumptions"]["locale"])
+        with st.expander(labels["edit_tasks_hint"], expanded=True):
+            edited = []
+            for r in payload["scored_tasks"]:
+                st.markdown(f"**{r['task']}**")
+                vol = st.number_input(
+                    f"{r['task']} - {labels['edit_volume']}",
+                    min_value=0.0,
+                    value=float(r.get("volume_per_week", 0)),
+                    key=f"vol_{r['rank']}",
+                )
+                mins = st.number_input(
+                    f"{r['task']} - {labels['edit_minutes']}",
+                    min_value=0.0,
+                    value=float(r.get("minutes_per_unit", 0)),
+                    key=f"min_{r['rank']}",
+                )
+                edited.append(
+                    Task(
+                        name=r["task"],
+                        volume_per_week=vol,
+                        minutes_per_unit=mins,
+                        repetitiveness=r.get("repetitiveness", 3),
+                        automatability=r.get("automatability", 3),
+                        evidence=r.get("evidence") or "",
+                    )
+                )
+            if st.button(labels["rescore"] + " (taches)"):
+                _resume("edit", rate=None, tasks=edited)
 
 
 def _render_done(labels: dict) -> None:

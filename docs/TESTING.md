@@ -43,9 +43,13 @@ fournisseur sur "ollama".
 
 - **Approuver** : genere le rapport final, le sauvegarde en base, propose
   "Nouvelle analyse".
-- **Modifier** : ouvre un champ "Nouveau taux horaire", entre une valeur plus
-  haute (ex. 60), clique "Re-scorer avec ce taux". Les montants EUR/mois
-  remontent. Puis Approuve.
+- **Modifier** : ouvre deux editeurs :
+  - "Modifier le taux horaire" : entre une valeur plus haute (ex. 60), clique
+    "Re-scorer avec ce taux". Les montants EUR/mois remontent.
+  - "Corriger les volumes / durees des taches" : chaque tache a un champ
+    volume/semaine et min/unite. C'est la ou tu confirmes ou corriges les
+    chiffres, surtout pour une analyse de site web (sinon les montants
+    restent des estimations). Puis re-score.
 - **Rejeter** : termine sans rapport, mais l'analyse reste en historique avec
   le statut "rejected".
 
@@ -70,13 +74,17 @@ fournisseur sur "ollama".
 1. Retour sur "Nouvelle analyse"
 2. Source = "Site web (URL)"
 3. Renseigne l'URL d'une marque, par exemple `https://www.glossier.com`
-4. L'app charge la page et le LLM local (ou groq) en extrait la marque, le
-   secteur et 3-6 taches operationnelles.
-5. L'analyse arrive a la revue humaine comme les autres sources, puis tu
-   Approuves pour le rapport.
+4. L'app crawle la homepage + les pages internes (about, contact, FAQ...)
+   et le LLM en extrait la marque, le secteur et les taches operationnelles
+   **observees** (canal de support, process de commande, FAQ...).
+5. Principe : le LLM n'invente pas. Si un volume ou une duree n'est pas
+   visible, la tache est marquee "estimation a confirmer" et chaque tache
+   affiche la preuve observee.
+6. A la revue humaine, ouvre "Modifier" puis "Corriger les volumes / durees
+   des taches" pour saisir les vrais chiffres, re-score, puis Approuve.
 
 Astuce : fonctionne avec n'importe quel site. En mode mock (LLM hors ligne)
-l'analyse extrait les taches du texte de la page, c'est moins riche mais ca
+l'analyse extrait les taches du texte des pages, c'est moins riche mais ca
 reste testable.
 
 ## Lancer l'app soi-meme

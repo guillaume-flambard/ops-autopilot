@@ -111,12 +111,16 @@ def analyze_website(
     data = llm.analyze_website(url, locale="fr")
     tasks = [Task(**t) for t in data.get("tasks") or []]
     sector = data.get("sector") if data.get("sector") in {s.value for s in Sector} else "Other"
+    team_size = int(data.get("team_size") or 0)
     return BrandProfile(
         name=data.get("name") or url,
         sector=Sector(sector),
-        team_size=int(data.get("team_size") or 5),
+        team_size=max(1, team_size),
         channels=[url],
-        notes=f"Analyse auto du site {url}",
+        notes=(
+            f"Analyse auto du site {url}"
+            + (f" ; taille d'equipe inconnue (non visible sur le site)" if team_size == 0 else "")
+        ),
         tasks=tasks,
         free_text=data.get("free_text") or "",
     )
@@ -127,14 +131,18 @@ def resume_review(
     config: dict,
     action: str,
     assumptions: Assumptions | None = None,
+    tasks: list[Task] | None = None,
 ) -> RunResult:
     """Resume a paused run at the human-review interrupt.
 
     ``action`` is ``approve``, ``edit`` or ``reject``. For ``edit``, pass the
-    revised ``assumptions`` so the graph re-scores before continuing.
+    revised ``assumptions`` and/or ``tasks`` so the graph re-scores before
+    continuing.
     """
     if assumptions is not None:
         runtime.app.update_state(config, {"assumptions": assumptions})
+    if tasks is not None:
+        runtime.app.update_state(config, {"tasks": tasks})
     final, events, interrupted = drive(runtime.app, config, Command(resume=action))
     thread_id = config["configurable"]["thread_id"]
     return RunResult(final=final, events=events, interrupted=interrupted, thread_id=thread_id, config=config)

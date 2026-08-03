@@ -165,7 +165,7 @@ class GroqClient(LLMClient):
     def analyze_website(self, url: str, locale: str = "fr") -> dict:
         from llm.prompts import ANALYZE_WEBSITE_PROMPT
 
-        page = fetch_page_text(url)
+        page = crawl_site_pages(url)
         prompt = ANALYZE_WEBSITE_PROMPT.get(locale, ANALYZE_WEBSITE_PROMPT["en"]).format(url=url, page=page)
         raw = self._complete(prompt)
         data = _extract_json(raw, expect_array=False)
@@ -260,7 +260,7 @@ class OllamaClient(LLMClient):
     def analyze_website(self, url: str, locale: str = "fr") -> dict:
         from llm.prompts import ANALYZE_WEBSITE_PROMPT
 
-        page = fetch_page_text(url)
+        page = crawl_site_pages(url)
         prompt = ANALYZE_WEBSITE_PROMPT.get(locale, ANALYZE_WEBSITE_PROMPT["en"]).format(url=url, page=page)
         raw = self._complete(prompt)
         data = _extract_json(raw, expect_array=False)
@@ -364,6 +364,53 @@ def fetch_page_text(url: str, timeout: float = 15.0, max_chars: int = 6000) -> s
     if resp.status_code != 200:
         resp.raise_for_status()  # surface 4xx/5xx for the caller
     return _strip_html(resp.text, max_chars=max_chars)
+
+
+_SITE_PATHS = [
+    "/about",
+    "/about-us",
+    "/contact",
+    "/contact-us",
+    "/help",
+    "/support",
+    "/faq",
+    "/shipping-returns",
+    "/shipping",
+    "/returns",
+    "/careers",
+    "/jobs",
+    "/team",
+]
+
+
+def crawl_site_pages(url: str, max_pages: int = 5, per_page: int = 3500) -> str:
+    """Fetch the homepage plus likely operational sub-pages and aggregate.
+
+    Returns labelled, de-duplicated text so the analysis sees real signals
+    (contact methods, shipping/returns policy, team size, FAQ) instead of a
+    marketing-only homepage.
+    """
+    base = url.rstrip("/")
+    sections = []
+    seen: set[str] = set()
+    candidates = [base] + [base + path for path in _SITE_PATHS]
+    for page in candidates:
+        if len(sections) >= max_pages:
+            break
+        try:
+            text = fetch_page_text(page, max_chars=per_page)
+        except Exception:
+            continue
+        if not text.strip():
+            continue
+        # de-dupe near-identical pages (many sites render the same shell)
+        key = text[:200]
+        if key in seen:
+            continue
+        seen.add(key)
+        label = page.replace(base, "").strip("/") or "home"
+        sections.append(f"=== {label} ===\n{text}")
+    return "\n\n".join(sections) or ""
 
 
 def get_client(
@@ -494,6 +541,7 @@ def _normalize_website_profile(data: dict) -> dict:
                     minutes_per_unit=float(item.get("minutes_per_unit", 0)),
                     repetitiveness=int(item.get("repetitiveness", 3)),
                     automatability=int(item.get("automatability", 3)),
+                    evidence=str(item.get("evidence") or "")[:200],
                 ).model_dump()
             )
         except (ValueError, TypeError):
@@ -502,13 +550,13 @@ def _normalize_website_profile(data: dict) -> dict:
     if sector not in {s.value for s in Sector}:
         sector = "Other"
     try:
-        team_size = int(data.get("team_size", 5))
+        team_size = int(data.get("team_size", 0))
     except (ValueError, TypeError):
-        team_size = 5
+        team_size = 0
     return {
         "name": str(data.get("name") or "Site web")[:120],
         "sector": sector,
-        "team_size": max(1, team_size),
+        "team_size": max(0, team_size),
         "free_text": str(data.get("free_text") or ""),
         "tasks": tasks,
     }
