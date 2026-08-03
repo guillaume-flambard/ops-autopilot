@@ -585,40 +585,74 @@ def _normalize_deep_dive(data: dict, task_name: str) -> dict:
 
 
 def _analyze_website_llm(client: LLMClient, url: str, locale: str = "fr") -> dict:
-    """Crawl a site and have the LLM extract a brand profile, with a retry.
+    """Crawl a site and have the LLM extract a brand profile, in two passes.
 
-    Small local models occasionally answer non-JSON; one retry smooths that.
-    The crawl is done once and reused across attempts to avoid hammering the
-    reader or the site.
+    Pass 1 extracts observable facts (support email, shipping/returns policy,
+    FAQ, process) from the raw page content. Pass 2 builds the task list from
+    those compact facts, which is far more reliable than asking a small model
+    to produce JSON directly from a large noisy markdown blob. Each pass gets
+    one retry on non-JSON output.
     """
-    from llm.prompts import ANALYZE_WEBSITE_PROMPT
+    from llm.prompts import ANALYZE_SITE_FACTS_PROMPT, ANALYZE_WEBSITE_PROMPT
 
     page = crawl_site_pages(url)
-    prompt = ANALYZE_WEBSITE_PROMPT.get(locale, ANALYZE_WEBSITE_PROMPT["en"]).format(url=url, page=page)
-    last_error: Optional[Exception] = None
-    for attempt in range(2):
-        try:
-            raw = client._complete(prompt)
-            data = _extract_json(raw, expect_array=False)
-            if not isinstance(data, dict):
-                raise ValueError("response is not a JSON object")
-            return _normalize_website_profile(data)
-        except (ValueError, json.JSONDecodeError, KeyError, TypeError) as exc:
-            last_error = exc
-            logger.warning("website analysis attempt %d failed (%s); retrying", attempt + 1, exc)
-    raise ValueError(f"website analysis failed: {last_error}") from last_error
+
+    def _call(prompt: str) -> dict:
+        last_error: Optional[Exception] = None
+        for attempt in range(2):
+            try:
+                raw = client._complete(prompt)
+                data = _extract_json(raw, expect_array=False)
+                if not isinstance(data, dict):
+                    raise ValueError("response is not a JSON object")
+                return data
+            except (ValueError, json.JSONDecodeError, KeyError, TypeError) as exc:
+                last_error = exc
+                logger.warning("website analysis attempt %d failed (%s); retrying", attempt + 1, exc)
+        raise ValueError(f"website analysis failed: {last_error}") from last_error
+
+    facts_prompt = ANALYZE_SITE_FACTS_PROMPT.get(locale, ANALYZE_SITE_FACTS_PROMPT["en"]).format(url=url, page=page)
+    facts_data = _call(facts_prompt)
+
+    facts = facts_data.get("facts") or []
+    facts_text = "\n".join(
+        f"- {f.get('type', 'other')}: {f.get('value', '')}" for f in facts if isinstance(f, dict)
+    )
+    if not facts_text.strip():
+        facts_text = "Aucun fait operationnel observe sur le site."
+
+    tasks_prompt = ANALYZE_WEBSITE_PROMPT.get(locale, ANALYZE_WEBSITE_PROMPT["en"]).format(facts=facts_text)
+    tasks_data = _call(tasks_prompt)
+
+    profile = _normalize_website_profile(
+        {
+            "name": facts_data.get("name"),
+            "sector": facts_data.get("sector"),
+            "team_size": facts_data.get("team_size"),
+            "free_text": tasks_data.get("free_text", ""),
+            "tasks": tasks_data.get("tasks", []),
+        }
+    )
+    return profile
 
 
 def _normalize_website_profile(data: dict) -> dict:
     """Validate a website-analysis LLM response into a BrandProfile-compatible dict."""
     tasks = []
+    seen_names: set[str] = set()
     for item in data.get("tasks") or []:
         if not isinstance(item, dict) or not item.get("name"):
             continue
         try:
+            name = str(item["name"])[:80]
+            # collapse near-duplicate tasks (small models repeat variants)
+            key = re.sub(r"[\W_]+", "", name).lower()
+            if key in seen_names:
+                continue
+            seen_names.add(key)
             tasks.append(
                 Task(
-                    name=str(item["name"])[:80],
+                    name=name,
                     volume_per_week=float(item.get("volume_per_week", 0)),
                     minutes_per_unit=float(item.get("minutes_per_unit", 0)),
                     repetitiveness=int(item.get("repetitiveness", 3)),

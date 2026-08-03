@@ -38,39 +38,62 @@ REPORT_EXECUTIVE_PROMPT = {
     ),
 }
 
-ANALYZE_WEBSITE_PROMPT = {
+ANALYZE_SITE_FACTS_PROMPT = {
     "fr": (
         "Tu es un analyste d'operations. On te donne le contenu de plusieurs pages d'un site web (markdown). "
         "Reponds en JSON avec cet objet exact : "
         "{{\"name\": \"nom de la marque\", \"sector\": \"D2C|SaaS|Agency|Other\", "
-        "\"team_size\": entier (n'invente pas : 0 si inconnu), "
-        "\"free_text\": \"description factuelle des operations observees\", "
-        "\"tasks\": [{{\"name\": \"tache courte\", \"volume_per_week\": nombre, \"minutes_per_unit\": nombre, "
-        "\"repetitiveness\": entier 1-5, \"automatability\": entier 1-5, "
-        "\"evidence\": \"la phrase exacte du site qui justifie cette tache, ou 'estimate'\"}}]}}. "
-        "REGLE STRICTE : n'invente AUCUN volume ni duree. Si le site ne donne pas de chiffre pour une tache, "
-        "mets volume_per_week=0 et minutes_per_unit=0 et evidence='estimate' (l'humain confirmera a la revue). "
-        "Cherche les vraies operations dans le contenu : email/chat/telephone de support (ex. 'email us at x@y.com'), "
-        "FAQ, politique de shipping/returns (ex. 'allow 1-3 business days to process'), tracking, retours, "
-        "abandon de panier, paiement, e-commerce. Extrais 2-6 taches. "
-        "Si rien d'operationnel n'est visible, renvoie tasks=[]. "
-        "Ne reponds qu'avec le JSON.\n\nSite : {url}\n\nContenu des pages :\n{page}"
+        "\"team_size\": entier (0 si inconnu), "
+        "\"facts\": [{{\"type\": \"support_email|support_phone|support_chat|shipping_policy|returns_policy|"
+        "tracking|faq_topic|order_process|other\", \"value\": \"un fait concret, phrase courte\"}}]}}. "
+        "REGLE : ne liste que des faits RELLEMENT ecrits sur le site, sans interpretation. "
+        "Cible : email/chat/telephone de support, politique de livraison et retours (delais, frais, process), "
+        "suivi de commande, FAQ, process de commande/paiement. "
+        "3 a 10 faits. Si rien, facts=[]. Ne reponds qu'avec le JSON.\n\nSite : {url}\n\nContenu des pages :\n{page}"
     ),
     "en": (
         "You are an operations analyst. You are given the content of several pages of a brand's website (markdown). "
         "Answer as JSON with this exact object: "
         "{{\"name\": \"brand name\", \"sector\": \"D2C|SaaS|Agency|Other\", "
-        "\"team_size\": integer (do not invent: 0 if unknown), "
-        "\"free_text\": \"factual description of the operations observed\", "
+        "\"team_size\": integer (0 if unknown), "
+        "\"facts\": [{{\"type\": \"support_email|support_phone|support_chat|shipping_policy|returns_policy|"
+        "tracking|faq_topic|order_process|other\", \"value\": \"a concrete fact, short sentence\"}}]}}. "
+        "RULE: only list facts ACTUALLY written on the site, no interpretation. "
+        "Target: support email/chat/phone, shipping and returns policy (delays, fees, process), "
+        "order tracking, FAQ, order/payment process. "
+        "3 to 10 facts. If none, facts=[]. Respond with the JSON only.\n\nSite: {url}\n\nPage content:\n{page}"
+    ),
+}
+
+ANALYZE_WEBSITE_PROMPT = {
+    "fr": (
+        "Tu es un analyste d'operations. On te donne des faits observes sur le site web d'une marque. "
+        "Reponds en JSON avec cet objet exact : "
+        "{{\"free_text\": \"description factuelle des operations observees\", "
+        "\"tasks\": [{{\"name\": \"tache courte\", \"volume_per_week\": nombre, \"minutes_per_unit\": nombre, "
+        "\"repetitiveness\": entier 1-5, \"automatability\": entier 1-5, "
+        "\"evidence\": \"le fait (type+value) qui justifie cette tache, ou 'estimate'\"}}]}}. "
+        "REGLE STRICTE : n'invente AUCUN volume ni duree. Si aucun fait ne donne de chiffre pour une tache, "
+        "mets volume_per_week=0 et minutes_per_unit=0. "
+        "evidence DOIT etre le type et la valeur du fait qui justifie la tache (ex. 'tracking: You'll get a shipment "
+        "notification email'), PAS 'estimate'. N'utilise 'estimate' que si AUCUN fait ne correspond. "
+        "Construis 2-6 taches a partir des faits (support par email, gestion des livraisons/retours, "
+        "reponse FAQ, traitement des commandes...). Si aucun fait operationnel, renvoie tasks=[]. "
+        "Ne reponds qu'avec le JSON.\n\nFaits observes :\n{facts}"
+    ),
+    "en": (
+        "You are an operations analyst. You are given facts observed on a brand's website. "
+        "Answer as JSON with this exact object: "
+        "{{\"free_text\": \"factual description of the operations observed\", "
         "\"tasks\": [{{\"name\": \"short task\", \"volume_per_week\": number, \"minutes_per_unit\": number, "
         "\"repetitiveness\": integer 1-5, \"automatability\": integer 1-5, "
-        "\"evidence\": \"the exact site sentence justifying this task, or 'estimate'\"}}]}}. "
-        "STRICT RULE: do not invent any volume or duration. If the site gives no figure for a task, "
-        "set volume_per_week=0 and minutes_per_unit=0 and evidence='estimate' (a human will confirm at review). "
-        "Look for real operations in the content: support email/chat/phone (e.g. 'email us at x@y.com'), "
-        "FAQ, shipping/returns policy (e.g. 'allow 1-3 business days to process'), tracking, returns, "
-        "cart abandonment, payments, e-commerce. Extract 2-6 tasks. "
-        "If nothing operational is visible, return tasks=[]. "
-        "Respond with the JSON only.\n\nSite: {url}\n\nPage content:\n{page}"
+        "\"evidence\": \"the fact (type+value) justifying this task, or 'estimate'\"}}]}}. "
+        "STRICT RULE: do not invent any volume or duration. If no fact gives a figure for a task, "
+        "set volume_per_week=0 and minutes_per_unit=0. "
+        "evidence MUST be the type and value of the fact justifying the task (e.g. 'tracking: You'll get a shipment "
+        "notification email'), NOT 'estimate'. Only use 'estimate' if NO fact matches. "
+        "Build 2-6 tasks from the facts (email support, shipping/returns handling, FAQ responses, "
+        "order processing...). If no operational fact, return tasks=[]. "
+        "Respond with the JSON only.\n\nObserved facts:\n{facts}"
     ),
 }

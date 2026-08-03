@@ -128,29 +128,39 @@ def test_mock_analyze_website_returns_free_text_when_no_tasks(monkeypatch: pytes
     assert "the bio" in profile["free_text"]
 
 
-def _ollama_with_llm_response(payload: str):
-    """OllamaClient whose /api/chat returns one canned response."""
+def _ollama_with_llm_response(payloads):
+    """OllamaClient whose /api/chat returns canned responses in sequence.
+
+    The two-pass analysis consumes two responses: facts, then tasks.
+    """
     calls = {"n": 0}
+    queue = list(payloads)
 
     def handler(request: httpx.Request) -> httpx.Response:
         calls["n"] += 1
-        return httpx.Response(200, json={"message": {"content": payload}})
+        content = queue.pop(0) if queue else ""
+        return httpx.Response(200, json={"message": {"content": content}})
 
     client = OllamaClient(transport=httpx.MockTransport(handler))
-    client._complete = lambda prompt, timeout=None: payload  # avoid second round-trip
     return client, calls
+
+
+_FACTS = (
+    '{"name": "Glow", "sector": "D2C", "team_size": 20, '
+    '"facts": [{"type": "support_email", "value": "email us at glow@test.com"}, '
+    '{"type": "shipping_policy", "value": "allow 1-3 business days to process"}]}'
+)
+_TASKS = (
+    '{"free_text": "Vend du skincare.", '
+    '"tasks": [{"name": "Orders", "volume_per_week": 100, "minutes_per_unit": 5, '
+    '"repetitiveness": 5, "automatability": 5, "evidence": "shipping_policy"}]}'
+)
 
 
 def test_ollama_analyze_website_extracts_profile(monkeypatch: pytest.MonkeyPatch) -> None:
     html = b"<p>Brand page about skincare.</p>"
     monkeypatch.setattr("llm.client.httpx.get", lambda *a, **k: _fake_page(html))
-    llm_json = (
-        '{"name": "Glow", "sector": "D2C", "team_size": 20, '
-        '"free_text": "Vend du skincare.", '
-        '"tasks": [{"name": "Orders", "volume_per_week": 100, "minutes_per_unit": 5, '
-        '"repetitiveness": 5, "automatability": 5}]}'
-    )
-    client, _ = _ollama_with_llm_response(llm_json)
+    client, _ = _ollama_with_llm_response([_FACTS, _TASKS])
     profile = client.analyze_website("https://glow.test")
     assert profile["name"] == "Glow"
     assert profile["sector"] == "D2C"
@@ -158,17 +168,19 @@ def test_ollama_analyze_website_extracts_profile(monkeypatch: pytest.MonkeyPatch
     assert len(profile["tasks"]) == 1
     assert profile["tasks"][0]["name"] == "Orders"
     assert profile["tasks"][0]["volume_per_week"] == 100
+    assert profile["tasks"][0]["evidence"] == "shipping_policy"
 
 
 def test_ollama_analyze_website_ignores_invalid_tasks(monkeypatch: pytest.MonkeyPatch) -> None:
     html = b"<p>x</p>"
     monkeypatch.setattr("llm.client.httpx.get", lambda *a, **k: _fake_page(html))
-    llm_json = (
-        '{"name": "X", "sector": "Unknown", "team_size": 3, "free_text": "f", '
+    facts = '{"name": "X", "sector": "Unknown", "team_size": 3, "facts": []}'
+    tasks = (
+        '{"free_text": "f", '
         '"tasks": [{"name": "ok", "volume_per_week": 5, "minutes_per_unit": 2, '
         '"repetitiveness": 3, "automatability": 3}, {"name": ""}]}'
     )
-    client, _ = _ollama_with_llm_response(llm_json)
+    client, _ = _ollama_with_llm_response([facts, tasks])
     profile = client.analyze_website("https://x.test")
     assert profile["sector"] == "Other"  # unknown sector falls back
     assert len(profile["tasks"]) == 1  # empty-name task dropped
@@ -182,7 +194,8 @@ def test_analyze_website_retries_after_bad_first_answer(monkeypatch: pytest.Monk
     answers = iter(
         [
             "Je ne peux pas repondre en JSON.",
-            '{"name": "Glow", "sector": "D2C", "team_size": 5, "free_text": "f", "tasks": []}',
+            _FACTS,
+            _TASKS,
         ]
     )
 
@@ -193,4 +206,4 @@ def test_analyze_website_retries_after_bad_first_answer(monkeypatch: pytest.Monk
     client = _RetryClient(transport=httpx.MockTransport(lambda r: httpx.Response(200, json={"message": {"content": ""}})))
     profile = client.analyze_website("https://x.test")
     assert profile["name"] == "Glow"
-    assert profile["tasks"] == []
+    assert profile["tasks"][0]["name"] == "Orders"
