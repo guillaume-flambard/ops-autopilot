@@ -8,6 +8,7 @@ and otherwise fall back to ``DATABASE_URL`` env / config default.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -20,6 +21,8 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from config import settings
 from db.models import Analysis, Base, User
+
+logger = logging.getLogger(__name__)
 
 _engines: dict[str, Engine] = {}
 _sessionmakers: dict[str, sessionmaker] = {}
@@ -36,8 +39,43 @@ def _verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
+_sqlite_path_cache: dict[str, str] = {}
+
+
+def _resolve_sqlite_path(url: str) -> str:
+    """Return a writable SQLite path for a ``sqlite:///`` URL.
+
+    On Streamlit Cloud the working directory is read-only (``/mount/src/...``),
+    so a relative path like ``./ops_autopilot.db`` cannot be written and
+    account creation fails. If the target directory is not writable, fall back
+    to a per-run temp dir (still writable). Local dev keeps its default file.
+    The resolution is cached so every operation uses the same DB file.
+    """
+    if not url.startswith("sqlite:///"):
+        return url
+    if url in _sqlite_path_cache:
+        return _sqlite_path_cache[url]
+    path = url[len("sqlite:///") :]
+    if not path:
+        _sqlite_path_cache[url] = url
+        return url
+    parent = os.path.dirname(os.path.abspath(path))
+    if os.access(parent, os.W_OK):
+        _sqlite_path_cache[url] = url
+        return url
+    # Cloud: fall back to a writable temp location (ephemeral per run).
+    import tempfile
+
+    fallback_dir = tempfile.mkdtemp(prefix="ops-autopilot-")
+    fallback = os.path.join(fallback_dir, os.path.basename(path) or "ops_autopilot.db")
+    resolved = "sqlite:///" + fallback
+    _sqlite_path_cache[url] = resolved
+    logger.warning("DB dir %s not writable; using %s (ephemeral)", parent, fallback)
+    return resolved
+
+
 def resolve_database_url() -> str:
-    return os.getenv("DATABASE_URL") or settings.database_url
+    return _resolve_sqlite_path(os.getenv("DATABASE_URL") or settings.database_url)
 
 
 def get_engine(url: Optional[str] = None) -> Engine:
