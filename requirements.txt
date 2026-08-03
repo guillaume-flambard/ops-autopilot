@@ -20,7 +20,9 @@ httpx==0.27.2
 streamlit==1.60.0
 
 # Persistence & auth (step 6)
-sqlalchemy==2.0.35
+# 2.0.51+ required: Streamlit Cloud runs Python 3.14, older 2.0.x crash on
+# Mapped[int | None] de-stringification
+sqlalchemy==2.0.51
 bcrypt==4.0.1
 
 # Domain config
