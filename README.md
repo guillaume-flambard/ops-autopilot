@@ -144,6 +144,11 @@ pytest tests/llm/test_eval_map_tasks.py  # ground-truth parser scoring (10 cases
 Mono-team production: Streamlit Cloud or a single VPS, daily SQLite backup,
 Postgres-ready schema. Full guide: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
+## Testing guide
+
+Hands-on walkthrough with a ready-made demo account:
+[`docs/TESTING.md`](docs/TESTING.md).
+
 ## Construction order
 
 Per design spec `docs/superpowers/specs/2026-08-01-ops-autopilot-design.md`:

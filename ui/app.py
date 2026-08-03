@@ -10,10 +10,16 @@ Run:
 
 from __future__ import annotations
 
+import sys
 import time
 from pathlib import Path
 
 import streamlit as st
+
+# Make the repo root importable. streamlit prepends the script's directory
+# (ui/) to sys.path, which would shadow the top-level "app" package with
+# ui/app.py; inserting the root first keeps "from app..." imports correct.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.list_history import list_history
 from app.presets import load_preset
