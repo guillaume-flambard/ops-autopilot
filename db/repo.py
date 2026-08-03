@@ -86,7 +86,8 @@ def _resolve_sqlite_path(url: str) -> str:
     if url in _sqlite_path_cache:
         return _sqlite_path_cache[url]
     path = url[len("sqlite:///") :]
-    if not path:
+    if not path or path == ":memory:" or "mode=memory" in path:
+        # Empty path and in-memory DBs must never be rewritten to a file.
         _sqlite_path_cache[url] = url
         return url
     resolved_path = _writable_file(path, "ops_autopilot.db")

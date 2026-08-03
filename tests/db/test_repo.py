@@ -97,6 +97,9 @@ def test_list_analyses_scoped_to_user(url, user_id) -> None:
 
 
 def test_checkpoint_db_path_uses_database_url(monkeypatch, tmp_path) -> None:
+    # chdir into a writable dir so the default relative path is not rewritten
+    # to a temp fallback when the checkout happens to be read-only.
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("DATABASE_URL", "sqlite:///" + str(tmp_path / "app.db"))
     assert checkpoint_db_path() == str(tmp_path / "app.db")
     monkeypatch.setenv("DATABASE_URL", "postgresql://user:pw@host/db")
@@ -109,6 +112,12 @@ def test_postgres_database_url_passes_through(monkeypatch) -> None:
     dsn = "postgresql+psycopg://user:pw@host:5432/ops_autopilot"
     monkeypatch.setenv("DATABASE_URL", dsn)
     assert resolve_database_url() == dsn
+
+
+def test_in_memory_sqlite_url_passes_through(monkeypatch) -> None:
+    """An in-memory SQLite URL must never be rewritten to a file path."""
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
+    assert resolve_database_url() == "sqlite:///:memory:"
 
 
 def test_checkpoint_path_for_postgres_backend_stays_local(monkeypatch, tmp_path) -> None:
