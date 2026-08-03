@@ -19,16 +19,27 @@ file; pick based on where you already host things.
 
 ### Option A - Streamlit Cloud
 
-1. Push the repo to GitHub.
-2. In Streamlit Cloud, create an app pointing at `ui/app.py`.
-3. Set the secrets in the app's dashboard:
-   - `GROQ_API_KEY` (live LLM) and `LLM_PROVIDER=groq`
-   - `APP_SECRET` (long random value; used for session hardening)
-   - `DEFAULT_LOCALE=fr` (or `en`)
-4. **Persistent storage**: Streamlit Cloud instances are ephemeral, so keep
-   the SQLite files on attached persistent storage (Streamlit Cloud supports
-   persistent disk mounts for paying plans) and point `DATABASE_URL` and
-   `CHECKPOINT_DB` at that volume.
+1. Push the repo to GitHub (it is public: `guillaume-flambard/ops-autopilot`).
+2. In Streamlit Cloud, create a new app pointing at the repo, branch `main`,
+   main file `ui/app.py`.
+3. Set the secrets in the app's dashboard (Settings > Secrets, TOML):
+   ```toml
+   GROQ_API_KEY="your_groq_key"
+   GROQ_MODEL="llama-3.3-70b-versatile"
+   JINA_API_KEY="your_jina_key"
+   APP_SECRET="a_long_random_string"
+   DEFAULT_LOCALE="fr"
+   LLM_PROVIDER="mock"
+   ```
+   - `LLM_PROVIDER=mock` is the safe default: Streamlit Cloud has no local
+     Ollama, so `ollama` would fall back to mock anyway. With a Groq key the
+     UI offers `groq`, which is the recommended provider for site analysis.
+   - `JINA_API_KEY` lifts the r.jina.ai rate limit for website analysis.
+4. **Persistent storage**: Streamlit Cloud instances are ephemeral, so the
+   SQLite files (`ops_autopilot.db`, `ops_autopilot_checkpoints.db`) reset on
+   redeploy. For persistent history, attach a persistent disk (paying plans)
+   and point `DATABASE_URL` and `CHECKPOINT_DB` at that volume. For an
+   interview demo, ephemeral storage is fine.
 
 ### Option B - VPS (single box)
 
