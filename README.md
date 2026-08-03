@@ -22,19 +22,9 @@ An assistant that analyzes a brand's operations, quantifies where time and money
 ### 1. Install Python Dependencies
 
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+make install          # uv venv + pinned deps from requirements.txt
+cp .env.example .env  # edit with your settings (APP_SECRET, GROQ_API_KEY, ...)
 ```
-
-### 2. Configure Environment
-
-```bash
-cp .env.example .env
-# Edit .env with your settings
-```
-
-Required variables:
-- `APP_SECRET`: Secret for session and password hashing
 
 Optional variables (defaults shown):
 - `GROQ_API_KEY` (optional; enables live LLM instead of the mock fallback)
@@ -43,13 +33,20 @@ Optional variables (defaults shown):
 - `DEFAULT_LOCALE=fr`
 - `LLM_PROVIDER=mock` (`mock` or `groq`)
 
-### 3. Run the Application
+### 2. Run the Application
+
+```bash
+make run    # Streamlit UI
+make demo   # offline CLI demo arc (mock LLM)
+make test   # full test suite
+make reset  # wipe local SQLite DBs (app + checkpoints)
+```
 
 **CLI (no UI, mock LLM works offline):**
 ```bash
-python -m graph.cli run --preset lumea --non-interactive
-python -m graph.cli run --preset saas
-python -m graph.cli run --name "Acme" --sector D2C --free-text "Instagram DMs: ~50/day, 2 min each, highly repetitive."
+.venv/bin/python -m graph.cli run --preset lumea --non-interactive
+.venv/bin/python -m graph.cli run --preset saas
+.venv/bin/python -m graph.cli run --name "Acme" --sector D2C --free-text "Instagram DMs: ~50/day, 2 min each, highly repetitive."
 ```
 Each run pauses at the human review (`a`/`m`/`r`), persists state to
 `ops_autopilot_checkpoints.db` (`--checkpoint-db` to change), and resumes the same
@@ -58,7 +55,7 @@ thread via LangGraph's `interrupt` / `Command(resume=...)`. Use `--groq-api-key`
 
 **Streamlit UI (construction order steps 5-6):**
 ```bash
-streamlit run ui/app.py
+make run   # or: .venv/bin/streamlit run ui/app.py
 ```
 Register/login (email/password, bcrypt-hashed) → input form (preset or custom
 brand + assumptions) → live timeline → human review (Approver / Modifier /
