@@ -14,8 +14,11 @@ orchestration and multi-tenant infrastructure.
 
 ## Production (mono-team)
 
-Two supported paths. Both are single-process Streamlit apps plus a SQLite
-file; pick based on where you already host things.
+Three supported paths, all single-process Streamlit apps. Pick based on where
+you already host things. **Option C (container) is the most robust** and the
+recommended default: it pins the Python runtime, which is what prevents the
+class of startup failures seen on Streamlit Community Cloud's bleeding-edge
+Python.
 
 ### Option A - Streamlit Cloud
 
@@ -55,6 +58,38 @@ file; pick based on where you already host things.
      in-flight analysis state; that is transient and fine to lose on restart.
    - For an interview demo, the SQLite fallback is fine — just know accounts
      reset when the instance recycles.
+
+### Option C - Container (recommended: Render / Railway / Fly.io / VPS)
+
+The repo ships a `Dockerfile` that pins **Python 3.12** and runs the Streamlit
+app on `0.0.0.0:$PORT`. Pinning the runtime is the durable fix for the boot
+crash hit on Streamlit Community Cloud (its Python 3.14 has no wheels for the
+CrewAI dependency tree); inside the image the runtime is always 3.12, so it
+cannot recur — on any host.
+
+Local run:
+```bash
+docker build -t ops-autopilot .
+docker run -p 8501:8501 --env-file .env ops-autopilot
+# open http://localhost:8501
+```
+
+Hosted (all build the Dockerfile straight from the repo — no server to manage):
+
+- **Render / Railway**: create a new *Web Service* from the repo (it detects the
+  Dockerfile), set the same env vars as Option A in the dashboard, deploy. Both
+  inject `$PORT`, which the image honours.
+- **Fly.io**: `fly launch` (detects the Dockerfile), then `fly deploy`. Fly
+  serves the app on port 8501 by default.
+
+**Persistence**: containers are ephemeral too, so for durable accounts/history
+either
+- point `DATABASE_URL` at a managed Postgres (see
+  [POSTGRES_SETUP.md](POSTGRES_SETUP.md) — the `psycopg` driver is bundled), or
+- attach a persistent volume (e.g. a Fly volume, a Render disk) and keep the
+  default SQLite files on it.
+
+Set env vars/secrets in the host's dashboard, never in the image.
 
 ### Option B - VPS (single box)
 
