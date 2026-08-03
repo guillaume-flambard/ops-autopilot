@@ -24,6 +24,10 @@ streamlit==1.60.0
 # Mapped[int | None] de-stringification
 sqlalchemy==2.0.51
 bcrypt==4.0.1
+# Postgres driver for persistent storage on ephemeral hosts (opt-in via
+# DATABASE_URL=postgresql+psycopg://...). psycopg 3.3.4 ships cp314 wheels, so
+# it installs cleanly on the Streamlit Cloud runtime. SQLite stays the default.
+psycopg[binary]==3.3.4
 
 # Domain config
 pydantic==2.13.4

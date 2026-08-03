@@ -17,6 +17,7 @@ from db.repo import (
     get_user_by_email,
     init_db,
     list_analyses,
+    resolve_database_url,
     update_analysis,
 )
 
@@ -99,4 +100,23 @@ def test_checkpoint_db_path_uses_database_url(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("DATABASE_URL", "sqlite:///" + str(tmp_path / "app.db"))
     assert checkpoint_db_path() == str(tmp_path / "app.db")
     monkeypatch.setenv("DATABASE_URL", "postgresql://user:pw@host/db")
-    assert checkpoint_db_path() == os.getenv("CHECKPOINT_DB", "ops_autopilot_checkpoints.db")
+    monkeypatch.delenv("CHECKPOINT_DB", raising=False)
+    assert checkpoint_db_path() == "ops_autopilot_checkpoints.db"
+
+
+def test_postgres_database_url_passes_through(monkeypatch) -> None:
+    """A non-SQLite URL is used verbatim (no sqlite path rewriting)."""
+    dsn = "postgresql+psycopg://user:pw@host:5432/ops_autopilot"
+    monkeypatch.setenv("DATABASE_URL", dsn)
+    assert resolve_database_url() == dsn
+
+
+def test_checkpoint_path_for_postgres_backend_stays_local(monkeypatch, tmp_path) -> None:
+    """With Postgres as the app DB, the checkpointer still uses a local SQLite
+    file, honouring CHECKPOINT_DB, and never returns the Postgres DSN."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://user:pw@host/db")
+    ckpt = str(tmp_path / "ckpt.db")
+    monkeypatch.setenv("CHECKPOINT_DB", ckpt)
+    resolved = checkpoint_db_path()
+    assert resolved == ckpt
+    assert not resolved.startswith("postgresql")

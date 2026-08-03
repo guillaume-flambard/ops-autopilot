@@ -1,5 +1,7 @@
 """Crew deep-dive tests, isolated offline via a fake CrewAI LLM."""
 
+import sys
+
 import pytest
 
 from crewai.llm import LLM
@@ -91,3 +93,29 @@ def test_parse_crew_output_empty_or_malformed():
     assert parse_crew_output("", _scored()) == []
     assert parse_crew_output("no brackets", _scored()) == []
     assert parse_crew_output("[broken", _scored()) == []
+
+
+def test_module_imports_without_crewai():
+    """The boot import chain (graph.build -> crew.run_deep_dive) must not need
+    crewai: importing the module with crewai unavailable still succeeds."""
+    import importlib
+
+    saved = sys.modules.get("crewai")
+    sys.modules["crewai"] = None  # any `import crewai` now raises ImportError
+    try:
+        module = importlib.reload(importlib.import_module("crew.run_deep_dive"))
+        assert hasattr(module, "run_deep_dive")
+    finally:
+        if saved is not None:
+            sys.modules["crewai"] = saved
+        else:
+            sys.modules.pop("crewai", None)
+
+
+def test_lazy_import_failure_falls_back_to_degraded(monkeypatch):
+    """A live llm but an unimportable crewai degrades gracefully instead of
+    crashing — the ImportError is caught by the same fallback path."""
+    monkeypatch.setitem(sys.modules, "crewai", None)  # `from crewai import ...` -> ImportError
+    dives = run_deep_dive(_scored(), Assumptions(hourly_rate_eur=35), llm=FakeCrewLLM(GOOD_JSON))
+    assert len(dives) == 2
+    assert all(d.degraded for d in dives)
