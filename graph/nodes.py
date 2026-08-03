@@ -136,7 +136,9 @@ def human_review(state: dict) -> dict:
 def report(state: dict, llm: LLMClient) -> dict:
     scored = state.get("scored_tasks") or []
     dives = state.get("deep_dives") or []
-    text = llm.executive_report(scored, dives, state["assumptions"])
+    brand = state.get("brand")
+    sector = brand.sector.value if brand is not None else None
+    text = llm.executive_report(scored, dives, state["assumptions"], sector=sector)
     return {
         "report": text,
         "step": "report",

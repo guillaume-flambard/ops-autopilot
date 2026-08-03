@@ -144,6 +144,7 @@ Per design spec `docs/superpowers/specs/2026-08-01-ops-autopilot-design.md`:
 6. ✅ Auth (bcrypt), analysis history, DB repositories (SQLAlchemy, SQLite/Postgres-ready)
 7. ✅ Use-case layer (`app/`): CLI and UI drive the graph through one code path
 8. ✅ Coverage targets + CI (`.coveragerc`, pytest-cov, GitHub Actions; global floor 75%, spec targets per layer)
+9. ✅ Live LLM path validated (Groq + CrewAI): httpx pinned <0.28, robust JSON extraction for chat-model output
 
 ## Interview Demo
 

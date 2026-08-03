@@ -71,7 +71,13 @@ class LLMClient:
     def deep_dive(self, scored_tasks: list[ScoredTask], assumptions: Assumptions) -> list[DeepDive]:
         raise NotImplementedError
 
-    def executive_report(self, scored_tasks: list[ScoredTask], deep_dives: list[DeepDive], assumptions: Assumptions) -> str:
+    def executive_report(
+        self,
+        scored_tasks: list[ScoredTask],
+        deep_dives: list[DeepDive],
+        assumptions: Assumptions,
+        sector: str | None = None,
+    ) -> str:
         raise NotImplementedError
 
 
@@ -86,8 +92,15 @@ class MockClient(LLMClient):
     def deep_dive(self, scored_tasks: list[ScoredTask], assumptions: Assumptions) -> list[DeepDive]:
         return degraded_deep_dive(scored_tasks, assumptions)
 
-    def executive_report(self, scored_tasks: list[ScoredTask], deep_dives: list[DeepDive], assumptions: Assumptions) -> str:
+    def executive_report(
+        self,
+        scored_tasks: list[ScoredTask],
+        deep_dives: list[DeepDive],
+        assumptions: Assumptions,
+        sector: str | None = None,
+    ) -> str:
         top = scored_tasks[0] if scored_tasks else None
+        sector = sector or assumptions.locale.value
         lines = [
             "Resume executif (mode degrade, LLM hors ligne)",
             f"Analyse de {len(scored_tasks)} taches, {assumptions.hourly_rate_eur} EUR/heure, {assumptions.weeks_per_month} semaines/mois.",
@@ -115,7 +128,7 @@ class GroqClient(LLMClient):
 
         prompt = MAP_TASKS_PROMPT.get(locale, MAP_TASKS_PROMPT["en"]).format(free_text=free_text)
         raw = self._complete(prompt)
-        data = json.loads(raw)
+        data = _extract_json(raw, expect_array=True)
         return [Task(**item) for item in data]
 
     def deep_dive(self, scored_tasks: list[ScoredTask], assumptions: Assumptions) -> list[DeepDive]:
@@ -127,15 +140,21 @@ class GroqClient(LLMClient):
                 "agent_flow, main_risk, effort_weeks, pilot_plan."
             )
             try:
-                data = json.loads(raw)
+                data = _extract_json(raw, expect_array=False)
                 data["task_name"] = scored.task.name
                 dives.append(DeepDive(**data))
-            except (json.JSONDecodeError, ValueError):
+            except (json.JSONDecodeError, ValueError, TypeError, KeyError):
                 logger.warning("deep_dive parse failed for %s; using degraded template", scored.task.name)
                 dives.append(MockClient().deep_dive([scored], assumptions)[0])
         return dives
 
-    def executive_report(self, scored_tasks: list[ScoredTask], deep_dives: list[DeepDive], assumptions: Assumptions) -> str:
+    def executive_report(
+        self,
+        scored_tasks: list[ScoredTask],
+        deep_dives: list[DeepDive],
+        assumptions: Assumptions,
+        sector: str | None = None,
+    ) -> str:
         from llm.prompts import REPORT_EXECUTIVE_PROMPT
 
         total_hours = sum(s.hours_per_month for s in scored_tasks)
@@ -144,7 +163,7 @@ class GroqClient(LLMClient):
             assumptions.locale.value,
             REPORT_EXECUTIVE_PROMPT["en"],
         ).format(
-            sector=assumptions.locale.value.upper(),
+            sector=sector or assumptions.locale.value,
             total_hours=f"{total_hours:.0f}",
             total_eur=f"{total_hours * assumptions.hourly_rate_eur:.0f}",
             total_etp=f"{total_hours / 151.67:.2f}",
@@ -176,6 +195,51 @@ def get_client(llm_provider: str = "mock", api_key: str = "", model: str = "llam
     if llm_provider == "groq":
         logger.warning("LLM provider is groq but no API key set; falling back to mock")
     return MockClient()
+
+
+def _extract_json(raw: str, *, expect_array: bool) -> dict | list:
+    """Extract a JSON value from an LLM response.
+
+    Chat models wrap JSON in markdown fences or add prose around it. Strip the
+    fences, then fall back to locating the first balanced ``[...]`` or
+    ``{...}`` region. Raises ``ValueError`` when nothing parseable is found.
+    """
+    text = raw.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\s*```\s*$", "", text)
+        text = text.strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    opener, closer = ("[", "]") if expect_array else ("{", "}")
+    start = text.find(opener)
+    if start == -1:
+        raise ValueError(f"no JSON {closer}-container found in LLM response")
+    depth = 0
+    in_string = False
+    escape = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == opener:
+            depth += 1
+        elif ch == closer:
+            depth -= 1
+            if depth == 0:
+                return json.loads(text[start : i + 1])
+    raise ValueError("unbalanced JSON in LLM response")
 
 
 # --- deterministic free-text parser (MockClient) -----------------------------

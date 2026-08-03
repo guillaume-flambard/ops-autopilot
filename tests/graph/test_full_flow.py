@@ -30,9 +30,9 @@ class RecordingMockLLM(MockClient):
         self.calls.append("deep_dive")
         return super().deep_dive(scored_tasks, assumptions)
 
-    def executive_report(self, scored_tasks, deep_dives, assumptions):
+    def executive_report(self, scored_tasks, deep_dives, assumptions, sector=None):
         self.calls.append("report")
-        return super().executive_report(scored_tasks, deep_dives, assumptions)
+        return super().executive_report(scored_tasks, deep_dives, assumptions, sector=sector)
 
 
 def load_lumea() -> dict:
