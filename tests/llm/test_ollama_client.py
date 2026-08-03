@@ -92,6 +92,60 @@ def test_deep_dive_parses_valid_object() -> None:
     assert dives[0].proposed_tool == "n8n"
 
 
+def test_deep_dive_flattens_object_substeps() -> None:
+    """Small local models return substeps as objects; they must be flattened."""
+    client = _client_for(
+        [
+            {
+                "message": {
+                    "content": (
+                        '{"substeps": [{"step": "1", "description": "Analyser"}, '
+                        '{"step": "2", "description": "Construire"}], '
+                        '"proposed_tool": "n8n", "agent_flow": "trigger", '
+                        '"main_risk": "low", "effort_weeks": 2, "pilot_plan": "pilote"}'
+                    )
+                }
+            }
+        ]
+    )
+    assumptions = Assumptions(hourly_rate_eur=40)
+    task = Task(name="DM", volume_per_week=350, minutes_per_unit=2, repetitiveness=5, automatability=4)
+    scored = [ScoredTask(task=task, hours_per_month=1, eur_per_month=100, etp=0.01, priority_score=1.0)]
+    dives = client.deep_dive(scored, assumptions)
+    assert len(dives) == 1
+    assert dives[0].degraded is False
+    assert dives[0].substeps == ["Analyser", "Construire"]
+
+
+def test_deep_dive_flattens_list_and_dict_text_fields() -> None:
+    """agent_flow / pilot_plan may come back as lists or dicts, not strings."""
+    client = _client_for(
+        [
+            {
+                "message": {
+                    "content": (
+                        '{"substeps": [{"description": "Etape A"}, "Etape B"], '
+                        '"proposed_tool": "n8n", '
+                        '"agent_flow": {"step1": "Reception", "step2": "Analyse"}, '
+                        '"main_risk": ["Risque 1", {"description": "Risque 2"}], '
+                        '"effort_weeks": 2, "pilot_plan": [{"week": 1, "substeps": ["Tester"]}]}'
+                    )
+                }
+            }
+        ]
+    )
+    assumptions = Assumptions(hourly_rate_eur=40)
+    task = Task(name="DM", volume_per_week=350, minutes_per_unit=2, repetitiveness=5, automatability=4)
+    scored = [ScoredTask(task=task, hours_per_month=1, eur_per_month=100, etp=0.01, priority_score=1.0)]
+    dives = client.deep_dive(scored, assumptions)
+    assert len(dives) == 1
+    assert dives[0].degraded is False
+    assert dives[0].substeps == ["Etape A", "Etape B"]
+    assert dives[0].agent_flow == "Reception | Analyse"
+    assert dives[0].main_risk == "Risque 1 | Risque 2"
+    assert "Tester" in dives[0].pilot_plan
+
+
 def test_executive_report_returns_raw_text() -> None:
     client = _client_for([{"message": {"content": "rapport executif"}}])
     assumptions = Assumptions(hourly_rate_eur=40)

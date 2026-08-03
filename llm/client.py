@@ -183,8 +183,7 @@ class GroqClient(LLMClient):
             )
             try:
                 data = _extract_json(raw, expect_array=False)
-                data["task_name"] = scored.task.name
-                dives.append(DeepDive(**data))
+                dives.append(DeepDive(**_normalize_deep_dive(data, scored.task.name)))
             except (json.JSONDecodeError, ValueError, TypeError, KeyError):
                 logger.warning("deep_dive parse failed for %s; using degraded template", scored.task.name)
                 dives.append(MockClient().deep_dive([scored], assumptions)[0])
@@ -279,8 +278,7 @@ class OllamaClient(LLMClient):
             )
             try:
                 data = _extract_json(raw, expect_array=False)
-                data["task_name"] = scored.task.name
-                dives.append(DeepDive(**data))
+                dives.append(DeepDive(**_normalize_deep_dive(data, scored.task.name)))
             except (json.JSONDecodeError, ValueError, TypeError, KeyError):
                 logger.warning("ollama deep_dive parse failed for %s; using degraded template", scored.task.name)
                 dives.append(MockClient().deep_dive([scored], assumptions)[0])
@@ -429,6 +427,57 @@ def _extract_json(raw: str, *, expect_array: bool) -> dict | list:
             if depth == 0:
                 return json.loads(text[start : i + 1])
     raise ValueError("unbalanced JSON in LLM response")
+
+
+def _normalize_deep_dive(data: dict, task_name: str) -> dict:
+    """Make an LLM deep-dive response fit the ``DeepDive`` model.
+
+    Small local models often return ``substeps`` as objects like
+    ``{"step": "...", "description": "..."}`` while the model expects plain
+    strings, and ``agent_flow`` / ``pilot_plan`` as lists of steps. Flatten
+    every field the model expects as a plain string.
+    """
+    substeps = data.get("substeps") or []
+    flattened = []
+    for item in substeps:
+        if isinstance(item, str):
+            flattened.append(item)
+        elif isinstance(item, dict):
+            piece = item.get("description") or item.get("step") or item.get("title")
+            if piece:
+                flattened.append(str(piece))
+        if len(flattened) >= 6:
+            break
+
+    def as_text(value) -> str:
+        if isinstance(value, str):
+            return value
+        if isinstance(value, list):
+            parts = []
+            for item in value:
+                piece = as_text(item)
+                if piece:
+                    parts.append(piece)
+            return " | ".join(parts) if parts else ""
+        if isinstance(value, dict):
+            # dicts like {"step1": "...", "step2": "..."} or
+            # {"week": 1, "substeps": ["..."]} - recurse into values
+            parts = []
+            for v in value.values():
+                piece = as_text(v)
+                if piece:
+                    parts.append(piece)
+            return " | ".join(parts) if parts else ""
+        return str(value) if value is not None else ""
+
+    return {
+        **data,
+        "substeps": flattened,
+        "agent_flow": as_text(data.get("agent_flow")),
+        "main_risk": as_text(data.get("main_risk")),
+        "pilot_plan": as_text(data.get("pilot_plan")),
+        "task_name": task_name,
+    }
 
 
 def _normalize_website_profile(data: dict) -> dict:
