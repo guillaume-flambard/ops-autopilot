@@ -65,6 +65,20 @@ fournisseur sur "ollama".
    `Email support tickets: ~40/week, 10 min each, highly repetitive.`
 4. L'analyse part du texte libre et arrive aussi a la revue humaine.
 
+### 6. Analyser n'importe quel site web
+
+1. Retour sur "Nouvelle analyse"
+2. Source = "Site web (URL)"
+3. Renseigne l'URL d'une marque, par exemple `https://www.glossier.com`
+4. L'app charge la page et le LLM local (ou groq) en extrait la marque, le
+   secteur et 3-6 taches operationnelles.
+5. L'analyse arrive a la revue humaine comme les autres sources, puis tu
+   Approuves pour le rapport.
+
+Astuce : fonctionne avec n'importe quel site. En mode mock (LLM hors ligne)
+l'analyse extrait les taches du texte de la page, c'est moins riche mais ca
+reste testable.
+
 ## Lancer l'app soi-meme
 
 ```bash
@@ -89,6 +103,7 @@ cd ~/projects/ops-autopilot
 make demo       # arc demo offline, mock LLM, preset lumea
 .venv/bin/python -m graph.cli run --preset lumea --non-interactive
 .venv/bin/python -m graph.cli run --llm-provider ollama --preset lumea
+.venv/bin/python -m graph.cli run --llm-provider ollama --url https://www.glossier.com --non-interactive
 .venv/bin/python -m graph.cli run --llm-provider groq --groq-api-key "$GROQ_API_KEY" --preset lumea
 .venv/bin/python -m graph.cli run --name "Acme" --sector D2C \
   --free-text "Instagram DMs: ~50/day, 2 min each, highly repetitive."

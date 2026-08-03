@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 from langgraph.types import Command
 
-from domain.models import Assumptions, BrandProfile
+from domain.models import Assumptions, BrandProfile, Task
 from graph.build import build_graph
 from graph.checkpointer import sqlite_checkpointer
 from graph.driver import drive
@@ -85,6 +85,41 @@ def run_analysis(
     config = {"configurable": {"thread_id": thread_id}}
     final, events, interrupted = drive(runtime.app, config, {"brand": brand, "assumptions": assumptions})
     return RunResult(final=final, events=events, interrupted=interrupted, thread_id=thread_id, config=config)
+
+
+def analyze_website(
+    url: str,
+    provider: str = "mock",
+    api_key: str = "",
+    model: str = "llama-3.3-70b-versatile",
+    ollama_base_url: str = "http://localhost:11434",
+) -> BrandProfile:
+    """Fetch a website and turn it into a brand profile via the configured LLM.
+
+    Shared by the UI and CLI so both sources run the same code path. The
+    profile carries structured tasks when the LLM extracted them; otherwise
+    the page text becomes ``free_text`` and map_tasks parses it.
+    """
+    from domain.models import Sector
+
+    llm = get_client(
+        llm_provider=provider,
+        api_key=api_key or "",
+        model=model,
+        ollama_base_url=ollama_base_url,
+    )
+    data = llm.analyze_website(url, locale="fr")
+    tasks = [Task(**t) for t in data.get("tasks") or []]
+    sector = data.get("sector") if data.get("sector") in {s.value for s in Sector} else "Other"
+    return BrandProfile(
+        name=data.get("name") or url,
+        sector=Sector(sector),
+        team_size=int(data.get("team_size") or 5),
+        channels=[url],
+        notes=f"Analyse auto du site {url}",
+        tasks=tasks,
+        free_text=data.get("free_text") or "",
+    )
 
 
 def resume_review(

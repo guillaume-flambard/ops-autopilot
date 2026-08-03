@@ -44,7 +44,17 @@ def prompt_review(state: dict) -> str:
 
 
 def build_inputs(args) -> dict:
-    if args.preset:
+    if args.url:
+        from app.run_analysis import analyze_website
+
+        brand = analyze_website(
+            args.url,
+            provider=args.llm_provider,
+            api_key=args.groq_api_key,
+            model=args.ollama_model if args.llm_provider == "ollama" else args.groq_model,
+            ollama_base_url=args.ollama_base_url,
+        )
+    elif args.preset:
         brand = load_preset(args.preset)
     else:
         sector = Sector(args.sector) if args.sector else Sector.OTHER
@@ -116,6 +126,7 @@ def main(argv=None) -> int:
 
     run_p = sub.add_parser("run", help="Run a full analysis")
     run_p.add_argument("--preset", choices=["lumea", "saas"])
+    run_p.add_argument("--url", help="Analyze a website: fetch the page and let the LLM extract brand + tasks")
     run_p.add_argument("--name")
     run_p.add_argument("--sector", choices=[s.value for s in Sector])
     run_p.add_argument("--team-size", type=int)

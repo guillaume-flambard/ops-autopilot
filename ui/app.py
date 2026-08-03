@@ -56,6 +56,7 @@ T = {
         "source": "Source",
         "preset": "Preset",
         "custom": "Personnalisee",
+        "website": "Site web (URL)",
         "name": "Nom",
         "sector": "Secteur",
         "team_size": "Equipe (personnes)",
@@ -110,6 +111,7 @@ T = {
         "source": "Source",
         "preset": "Preset",
         "custom": "Custom",
+        "website": "Website (URL)",
         "name": "Name",
         "sector": "Sector",
         "team_size": "Team size",
@@ -368,16 +370,23 @@ def _render_login(labels: dict) -> None:
 
 
 def _render_analysis(labels: dict) -> None:
-    with st.sidebar.form("input_form"):
+    with st.sidebar:
         st.markdown(f"**{labels['brand']}**")
-        source = st.radio(labels["source"], [labels["preset"], labels["custom"]], horizontal=True)
+        source = st.radio(
+            labels["source"],
+            [labels["preset"], labels["custom"], labels["website"]],
+            horizontal=True,
+        )
         preset = "lumea"
         custom_name = "Acme"
         sector = Sector.D2C.value
         team_size = 10
         free_text = ""
+        website_url = ""
         if source == labels["preset"]:
             preset = st.selectbox("Preset", ["lumea", "saas"])
+        elif source == labels["website"]:
+            website_url = st.text_input("URL", value="https://www.glossier.com")
         else:
             custom_name = st.text_input(labels["name"], value="Acme")
             sector = st.selectbox(labels["sector"], [s.value for s in Sector])
@@ -387,6 +396,7 @@ def _render_analysis(labels: dict) -> None:
                 value="Instagram DMs: ~50/day, 2 min each, highly repetitive.",
             )
 
+    with st.sidebar.form("input_form"):
         st.markdown(f"**{labels['assumptions']}**")
         hourly_rate = st.number_input(labels["hourly_rate"], min_value=1.0, value=40.0)
         weeks_per_month = st.number_input(labels["weeks_per_month"], min_value=1.0, max_value=6.0, value=4.33)
@@ -412,6 +422,14 @@ def _render_analysis(labels: dict) -> None:
     if submitted:
         if source == labels["preset"]:
             brand = load_preset(preset)
+        elif source == labels["website"]:
+            try:
+                from app.run_analysis import analyze_website as analyze_url
+
+                brand = analyze_url(website_url, provider=provider, api_key=api_key, model=model, ollama_base_url=ollama_base_url)
+            except Exception as exc:
+                st.session_state["error"] = str(exc)
+                st.rerun()
         else:
             brand = BrandProfile(
                 name=custom_name,
@@ -446,6 +464,7 @@ def main() -> None:
 
     if st.session_state.get("error"):
         st.error(st.session_state["error"])
+        st.session_state["error"] = None
 
     if "user" not in st.session_state:
         lang = st.selectbox("Langue / Language", ["fr", "en"])

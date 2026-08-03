@@ -24,7 +24,7 @@ from typing import Optional
 
 import httpx
 
-from domain.models import Assumptions, DeepDive, ScoredTask, Task
+from domain.models import Assumptions, DeepDive, ScoredTask, Sector, Task
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +84,14 @@ class LLMClient:
     ) -> str:
         raise NotImplementedError
 
+    def analyze_website(self, url: str, locale: str = "fr") -> dict:
+        """Fetch a site and return a structured brand profile.
+
+        Returns a dict compatible with ``BrandProfile``: name, sector,
+        team_size, free_text, tasks (list of ``Task`` dicts).
+        """
+        raise NotImplementedError
+
 
 class MockClient(LLMClient):
     """Deterministic offline fallback. No network, no key needed."""
@@ -92,6 +100,25 @@ class MockClient(LLMClient):
 
     def map_tasks_from_text(self, free_text: str, locale: str = "fr") -> list[Task]:
         return _parse_free_text(free_text)
+
+    def analyze_website(self, url: str, locale: str = "fr") -> dict:
+        """Fetch the page and derive a brand profile from structured free text.
+
+        Deterministic: no LLM. If the page contains ``task: <vol>/day...``
+        lines they are parsed; otherwise the page text becomes free_text.
+        """
+        try:
+            page = fetch_page_text(url)
+        except Exception as exc:
+            raise ValueError(f"Impossible de charger le site ({exc}).") from exc
+        tasks = _parse_free_text(page)
+        return {
+            "name": url,
+            "sector": "Other",
+            "team_size": 5,
+            "free_text": page,
+            "tasks": [t.model_dump() for t in tasks],
+        }
 
     def deep_dive(self, scored_tasks: list[ScoredTask], assumptions: Assumptions) -> list[DeepDive]:
         return degraded_deep_dive(scored_tasks, assumptions)
@@ -134,6 +161,17 @@ class GroqClient(LLMClient):
         raw = self._complete(prompt)
         data = _extract_json(raw, expect_array=True)
         return [Task(**item) for item in data]
+
+    def analyze_website(self, url: str, locale: str = "fr") -> dict:
+        from llm.prompts import ANALYZE_WEBSITE_PROMPT
+
+        page = fetch_page_text(url)
+        prompt = ANALYZE_WEBSITE_PROMPT.get(locale, ANALYZE_WEBSITE_PROMPT["en"]).format(url=url, page=page)
+        raw = self._complete(prompt)
+        data = _extract_json(raw, expect_array=False)
+        if not isinstance(data, dict):
+            raise ValueError("response is not a JSON object")
+        return _normalize_website_profile(data)
 
     def deep_dive(self, scored_tasks: list[ScoredTask], assumptions: Assumptions) -> list[DeepDive]:
         dives = []
@@ -220,6 +258,17 @@ class OllamaClient(LLMClient):
         data = _extract_json(raw, expect_array=True)
         return [Task(**item) for item in data]
 
+    def analyze_website(self, url: str, locale: str = "fr") -> dict:
+        from llm.prompts import ANALYZE_WEBSITE_PROMPT
+
+        page = fetch_page_text(url)
+        prompt = ANALYZE_WEBSITE_PROMPT.get(locale, ANALYZE_WEBSITE_PROMPT["en"]).format(url=url, page=page)
+        raw = self._complete(prompt)
+        data = _extract_json(raw, expect_array=False)
+        if not isinstance(data, dict):
+            raise ValueError("response is not a JSON object")
+        return _normalize_website_profile(data)
+
     def deep_dive(self, scored_tasks: list[ScoredTask], assumptions: Assumptions) -> list[DeepDive]:
         dives = []
         for scored in scored_tasks:
@@ -297,6 +346,28 @@ def _ollama_reachable(base_url: str, timeout: float = 2.0) -> bool:
         return False
 
 
+def _strip_html(raw: str, max_chars: int = 6000) -> str:
+    """Rough HTML to text: drop tags/scripts/styles, collapse whitespace."""
+    raw = re.sub(r"(?is)<(script|style).*?</\1>", " ", raw)
+    raw = re.sub(r"(?is)<[^>]+>", " ", raw)
+    raw = re.sub(r"\s+", " ", raw)
+    return raw.strip()[:max_chars]
+
+
+def fetch_page_text(url: str, timeout: float = 15.0, max_chars: int = 6000) -> str:
+    """Fetch a page and return readable text (best effort, no JS rendering)."""
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+        )
+    }
+    resp = httpx.get(url, headers=headers, timeout=timeout, follow_redirects=True)
+    if resp.status_code != 200:
+        resp.raise_for_status()  # surface 4xx/5xx for the caller
+    return _strip_html(resp.text, max_chars=max_chars)
+
+
 def get_client(
     llm_provider: str = "mock",
     api_key: str = "",
@@ -358,6 +429,40 @@ def _extract_json(raw: str, *, expect_array: bool) -> dict | list:
             if depth == 0:
                 return json.loads(text[start : i + 1])
     raise ValueError("unbalanced JSON in LLM response")
+
+
+def _normalize_website_profile(data: dict) -> dict:
+    """Validate a website-analysis LLM response into a BrandProfile-compatible dict."""
+    tasks = []
+    for item in data.get("tasks") or []:
+        if not isinstance(item, dict) or not item.get("name"):
+            continue
+        try:
+            tasks.append(
+                Task(
+                    name=str(item["name"])[:80],
+                    volume_per_week=float(item.get("volume_per_week", 0)),
+                    minutes_per_unit=float(item.get("minutes_per_unit", 0)),
+                    repetitiveness=int(item.get("repetitiveness", 3)),
+                    automatability=int(item.get("automatability", 3)),
+                ).model_dump()
+            )
+        except (ValueError, TypeError):
+            continue
+    sector = str(data.get("sector", "Other"))
+    if sector not in {s.value for s in Sector}:
+        sector = "Other"
+    try:
+        team_size = int(data.get("team_size", 5))
+    except (ValueError, TypeError):
+        team_size = 5
+    return {
+        "name": str(data.get("name") or "Site web")[:120],
+        "sector": sector,
+        "team_size": max(1, team_size),
+        "free_text": str(data.get("free_text") or ""),
+        "tasks": tasks,
+    }
 
 
 # --- deterministic free-text parser (MockClient) -----------------------------

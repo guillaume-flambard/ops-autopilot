@@ -5,6 +5,7 @@ An assistant that analyzes a brand's operations, quantifies where time and money
 ## Features
 
 - **End-to-end analysis**: ingest → map → score → deep-dive (top 3) → human review → executive report
+- **Any brand or site**: presets (Lumea, SaaS), free-text description, or a website URL (the LLM extracts brand + tasks from the page)
 - **Transparent assumptions**: Every figure shows its assumptions; no "magic" numbers
 - **Human in the loop**: Must approve/edit/reject before final report
 - **Small-team product**: Email/password auth, analysis history, centralized config
@@ -50,6 +51,7 @@ make reset  # wipe local SQLite DBs (app + checkpoints)
 .venv/bin/python -m graph.cli run --preset lumea --non-interactive
 .venv/bin/python -m graph.cli run --preset saas
 .venv/bin/python -m graph.cli run --name "Acme" --sector D2C --free-text "Instagram DMs: ~50/day, 2 min each, highly repetitive."
+.venv/bin/python -m graph.cli run --llm-provider ollama --url https://www.glossier.com --non-interactive
 ```
 Each run pauses at the human review (`a`/`m`/`r`), persists state to
 `ops_autopilot_checkpoints.db` (`--checkpoint-db` to change), and resumes the same
@@ -168,6 +170,7 @@ Per design spec `docs/superpowers/specs/2026-08-01-ops-autopilot-design.md`:
 9. ✅ Live LLM path validated (Groq + CrewAI): httpx pinned <0.28, robust JSON extraction for chat-model output
 10. ✅ v1 finishing: removed dead legacy Ollama config (unwired), direct `bcrypt` (no passlib), Pydantic V2 config, hermetic test env (`tests/conftest.py`), end-to-end integration tests, eval suite v1.1 (ground-truth task parser, 10 cases)
 11. ✅ Ollama local LLM: `OllamaClient` (httpx, no quota), crew_llm via LiteLLM `ollama/<model>`, UI/CLI providers `mock | ollama | groq`, automatic mock fallback when the Ollama server is down
+12. ✅ Website source: fetch any URL, let the LLM extract brand + tasks (`analyze_website`), UI radio "Site web (URL)" + CLI `--url`
 
 ## Interview Demo
 

@@ -207,6 +207,14 @@ def test_custom_source_with_ollama_renders_url_and_model_fields(at: AppTest) -> 
     assert "Modele Ollama" in labels
 
 
+def test_website_source_renders_url_field(at: AppTest) -> None:
+    _radio(at, "Source").set_value("Site web (URL)")
+    at.run()
+    labels = [t.label for t in at.text_input]
+    assert "URL" in labels
+    assert "Lancer l'analyse" in [b.label for b in at.button]
+
+
 def test_history_page_shows_persisted_analyses(at: AppTest) -> None:
     _button(at, "Lancer l'analyse").click().run()
     _button(at, "Approuver").click().run()

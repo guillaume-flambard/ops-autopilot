@@ -37,3 +37,24 @@ REPORT_EXECUTIVE_PROMPT = {
         "Respond with the summary only."
     ),
 }
+
+ANALYZE_WEBSITE_PROMPT = {
+    "fr": (
+        "Tu es un analyste d'operations. Analyse le site web d'une marque et reponds en JSON avec "
+        "cet objet exact : {{\"name\": \"nom de la marque\", \"sector\": \"D2C|SaaS|Agency|Other\", "
+        "\"team_size\": entier, \"free_text\": \"description des operations en 2-3 phrases\", "
+        "\"tasks\": [{{\"name\": \"tache courte\", \"volume_per_week\": nombre, \"minutes_per_unit\": nombre, "
+        "\"repetitiveness\": entier 1-5, \"automatability\": entier 1-5}}]}}. "
+        "Infer 3-6 taches operationnelles reelles (support, logistique, marketing manuel, admin...). "
+        "Ne reponds qu'avec le JSON.\n\nSite : {url}\n\nContenu de la page :\n{page}"
+    ),
+    "en": (
+        "You are an operations analyst. Analyze a brand's website and answer as JSON with this exact "
+        "object: {{\"name\": \"brand name\", \"sector\": \"D2C|SaaS|Agency|Other\", "
+        "\"team_size\": integer, \"free_text\": \"2-3 sentence description of operations\", "
+        "\"tasks\": [{{\"name\": \"short task\", \"volume_per_week\": number, \"minutes_per_unit\": number, "
+        "\"repetitiveness\": integer 1-5, \"automatability\": integer 1-5}}]}}. "
+        "Infer 3-6 real operational tasks (support, logistics, manual marketing, admin...). "
+        "Respond with the JSON only.\n\nSite: {url}\n\nPage content:\n{page}"
+    ),
+}
