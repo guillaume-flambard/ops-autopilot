@@ -21,8 +21,6 @@ streamlit==1.60.0
 
 # Persistence & auth (step 6)
 sqlalchemy==2.0.35
-passlib==1.7.4
-# passlib needs bcrypt<5 (4.0.1); bcrypt 5.x breaks passlib's bcrypt backend
 bcrypt==4.0.1
 
 # Domain config
@@ -37,5 +35,4 @@ coverage==7.15.3
 
 # ---------------------------------------------------------------------------
 # Future steps (not yet implemented - do NOT pin until the step lands):
-#   (legacy)  : ollama
 # langchain / langchain-core are transitive deps of crewai+langgraph; do not pin.

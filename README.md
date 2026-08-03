@@ -132,6 +132,18 @@ pytest tests/domain/
 pytest tests/graph/
 ```
 
+### E2E + Eval Suite
+
+```bash
+pytest tests/integration/   # full pipeline vs real SQLite + on-disk checkpointer
+pytest tests/llm/test_eval_map_tasks.py  # ground-truth parser scoring (10 cases, floor 90%)
+```
+
+## Deployment
+
+Mono-team production: Streamlit Cloud or a single VPS, daily SQLite backup,
+Postgres-ready schema. Full guide: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+
 ## Construction order
 
 Per design spec `docs/superpowers/specs/2026-08-01-ops-autopilot-design.md`:
@@ -145,12 +157,22 @@ Per design spec `docs/superpowers/specs/2026-08-01-ops-autopilot-design.md`:
 7. ✅ Use-case layer (`app/`): CLI and UI drive the graph through one code path
 8. ✅ Coverage targets + CI (`.coveragerc`, pytest-cov, GitHub Actions; global floor 75%, spec targets per layer)
 9. ✅ Live LLM path validated (Groq + CrewAI): httpx pinned <0.28, robust JSON extraction for chat-model output
+10. ✅ v1 finishing: removed legacy Ollama, direct `bcrypt` (no passlib), Pydantic V2 config, hermetic test env (`tests/conftest.py`), end-to-end integration tests, eval suite v1.1 (ground-truth task parser, 10 cases)
 
 ## Interview Demo
 
-~6 minutes: problem → Lumea input → live analysis / crew → human checkpoint (edit rate, approve) → final report → trade-offs.
+~6 minutes, all offline-mockable except the live LLM pass:
 
-Product rule: **the agent never alone finalizes figures that commit budget** - human review is mandatory.
+1. `cp .env.example .env` and set `GROQ_API_KEY=...`, `LLM_PROVIDER=groq` (or skip both for the deterministic offline mock).
+2. `make run` → register a test account.
+3. Load the **Lumea** preset: watch ingest → map_tasks → score stream in the live timeline (Groq-backed if configured, mock otherwise).
+4. The run pauses at **human review**: edit the "Instagram DMs" rate up, then Approve.
+5. Read the **final executive report** (sector-aware), then check the Historique page for the persisted analysis.
+6. Trade-offs: highlight the two golden rules below and the transparent assumptions behind every figure.
+
+Product rules to call out:
+- **the agent never alone finalizes figures that commit budget** - human review is mandatory;
+- **money only via `domain/scoring.py`** - the LLM never invents amounts, it only suggests assumptions the human must accept.
 
 ## License
 

@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Iterator, Optional
 
-from passlib.context import CryptContext
+import bcrypt
 from sqlalchemy import create_engine, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -21,10 +21,19 @@ from sqlalchemy.orm import Session, sessionmaker
 from config import settings
 from db.models import Analysis, Base, User
 
-_pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 _engines: dict[str, Engine] = {}
 _sessionmakers: dict[str, sessionmaker] = {}
+
+
+def _hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def _verify_password(password: str, password_hash: str) -> bool:
+    try:
+        return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
+    except ValueError:
+        return False
 
 
 def resolve_database_url() -> str:
@@ -71,7 +80,7 @@ def create_user(email: str, password: str, url: Optional[str] = None) -> User:
     with session_scope(url) as s:
         if s.scalar(select(User).where(User.email == email)):
             raise ValueError("email_already_registered")
-        user = User(email=email, password_hash=_pwd.hash(password))
+        user = User(email=email, password_hash=_hash_password(password))
         s.add(user)
         s.flush()
         return user
@@ -85,7 +94,7 @@ def get_user_by_email(email: str, url: Optional[str] = None) -> User | None:
 
 def authenticate(email: str, password: str, url: Optional[str] = None) -> User | None:
     user = get_user_by_email(email, url=url)
-    if user is not None and _pwd.verify(password, user.password_hash):
+    if user is not None and _verify_password(password, user.password_hash):
         return user
     return None
 

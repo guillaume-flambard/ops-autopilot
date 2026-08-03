@@ -280,19 +280,23 @@ def _parse_sentence(sentence: str) -> Optional[Task]:
         minutes = value * 60 if min_match.group(2).startswith("hour") else value
 
     repetitiveness = 3
-    rep_match = re.search(r"(highly?\s*repetitive|repetitive|medium\s*repetitive|low\s*repetitive)", body)
+    rep_match = re.search(r"(highly?\s+repetitive|medium\s+repetitive|low\s+repetitive|repetitive)", body)
     if rep_match:
         token = rep_match.group(1)
         if token.startswith("high"):
             repetitiveness = REPETITIVENESS_MAP["high"]
         elif token.startswith("medium"):
             repetitiveness = REPETITIVENESS_MAP["medium"]
-        else:
+        elif token.startswith("low"):
             repetitiveness = REPETITIVENESS_MAP["low"]
+        else:
+            repetitiveness = REPETITIVENESS_MAP["medium"]
 
     automatability = 3
     if "highly repetitive" in body or "automatab" in body:
         automatability = 4
+    elif "low repetitive" in body:
+        automatability = 1
 
     return Task(
         name=name,

@@ -476,8 +476,7 @@ Product rule to preserve in copy and behavior: **the agent never alone finalizes
 
 ### Auth & security
 
-- `passlib` (password hashing)
-- `bcrypt` or `argon2-cffi` (hashing backend)
+- `bcrypt` (password hashing, direct - no passlib)
 
 ### Development
 
