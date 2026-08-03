@@ -74,13 +74,18 @@ fournisseur sur "ollama".
 1. Retour sur "Nouvelle analyse"
 2. Source = "Site web (URL)"
 3. Renseigne l'URL d'une marque, par exemple `https://www.glossier.com`
-4. L'app crawle la homepage + les pages internes (about, contact, FAQ...)
-   et le LLM en extrait la marque, le secteur et les taches operationnelles
-   **observees** (canal de support, process de commande, FAQ...).
-5. Principe : le LLM n'invente pas. Si un volume ou une duree n'est pas
-   visible, la tache est marquee "estimation a confirmer" et chaque tache
-   affiche la preuve observee.
-6. A la revue humaine, ouvre "Modifier" puis "Corriger les volumes / durees
+4. L'app rend le site via **Jina Reader** (`r.jina.ai`, clé optionnelle dans
+   `.env` pour lever le quota), ce qui débloque les sites JavaScript dont le
+   contenu est invisible à une simple requête HTTP. Elle crawle la homepage
+   + les pages internes (shipping, returns, FAQ, contact).
+5. Le LLM en extrait la marque, le secteur et les taches operationnelles
+   **observees**, chacune avec sa preuve (la phrase du site). Principe : le
+   LLM n'invente pas. Si un volume ou une duree n'est pas visible, la tache
+   est marquee "estimation a confirmer".
+6. **Conseil** : pour l'analyse de site, prefere le fournisseur **groq** (si
+   une cle est configuree) : le modele 70B est plus fiable et rapide que le
+   qwen2.5:3b local sur ce type de tache riche.
+7. A la revue humaine, ouvre "Modifier" puis "Corriger les volumes / durees
    des taches" pour saisir les vrais chiffres, re-score, puis Approuve.
 
 Astuce : fonctionne avec n'importe quel site. En mode mock (LLM hors ligne)
