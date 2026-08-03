@@ -66,7 +66,9 @@ T = {
         "llm": "3. LLM",
         "provider": "Fournisseur",
         "api_key": "Cle API Groq",
-        "model": "Modele Groq",
+        "model": "Modele LLM",
+        "ollama_url": "URL serveur Ollama",
+        "ollama_model": "Modele Ollama",
         "launch": "Lancer l'analyse",
         "review": "Revue humaine",
         "scored": "Taches notees (ROI)",
@@ -118,7 +120,9 @@ T = {
         "llm": "3. LLM",
         "provider": "Provider",
         "api_key": "Groq API key",
-        "model": "Groq model",
+        "model": "LLM model",
+        "ollama_url": "Ollama server URL",
+        "ollama_model": "Ollama model",
         "launch": "Run analysis",
         "review": "Human review",
         "scored": "Scored tasks (ROI)",
@@ -146,12 +150,25 @@ T = {
 }
 
 
-def _build(provider: str, api_key: str, model: str):
-    return build_runtime(provider=provider, api_key=api_key or "", model=model, checkpoint_db=CHECKPOINT_DB)
+def _build(provider: str, api_key: str, model: str, ollama_base_url: str = "http://localhost:11434"):
+    return build_runtime(
+        provider=provider,
+        api_key=api_key or "",
+        model=model,
+        checkpoint_db=CHECKPOINT_DB,
+        ollama_base_url=ollama_base_url,
+    )
 
 
-def _launch(brand: BrandProfile, assumptions: Assumptions, provider: str, api_key: str, model: str) -> None:
-    runtime = _build(provider, api_key, model)
+def _launch(
+    brand: BrandProfile,
+    assumptions: Assumptions,
+    provider: str,
+    api_key: str,
+    model: str,
+    ollama_base_url: str = "http://localhost:11434",
+) -> None:
+    runtime = _build(provider, api_key, model, ollama_base_url)
     thread_id = f"ui-{int(time.time() * 1000)}"
     try:
         result = run_analysis(brand=brand, assumptions=assumptions, runtime=runtime, thread_id=thread_id)
@@ -172,6 +189,7 @@ def _launch(brand: BrandProfile, assumptions: Assumptions, provider: str, api_ke
             "provider": provider,
             "api_key": api_key,
             "model": model,
+            "ollama_base_url": ollama_base_url,
             "runtime": runtime,
             "error": None,
             "persisted_id": None,
@@ -186,6 +204,7 @@ def _resume(action: str, rate: float | None = None, locale: str | None = None) -
             st.session_state.get("provider", "mock"),
             st.session_state.get("api_key", ""),
             st.session_state.get("model", "llama-3.3-70b-versatile"),
+            st.session_state.get("ollama_base_url", "http://localhost:11434"),
         )
         st.session_state["runtime"] = runtime
     config = st.session_state["config"]
@@ -208,9 +227,12 @@ def _resume(action: str, rate: float | None = None, locale: str | None = None) -
     elif final.get("action") == "reject":
         st.session_state["status"] = "rejected"
         st.session_state["report"] = None
-    elif final.get("report"):
+    else:
+        # approve (or anything that finished the run): mark done. The report
+        # node already degrades empty LLM output, but stay defensive here.
         st.session_state["status"] = "done"
-        st.session_state["report"] = final["report"]
+        st.session_state["report"] = final.get("report") or st.session_state.get("report")
+        st.session_state["persisted_id"] = None
 
 
 def _persist_analysis() -> None:
@@ -370,14 +392,20 @@ def _render_analysis(labels: dict) -> None:
         weeks_per_month = st.number_input(labels["weeks_per_month"], min_value=1.0, max_value=6.0, value=4.33)
 
         st.markdown(f"**{labels['llm']}**")
-        providers = ["mock", "groq"]
-        default_provider = "groq" if settings.llm_provider == "groq" and settings.groq_api_key else "mock"
+        providers = ["ollama", "groq", "mock"]
+        if not settings.groq_api_key:
+            providers.remove("groq")
+        default_provider = settings.llm_provider if settings.llm_provider in providers else "mock"
         provider = st.selectbox(labels["provider"], providers, index=providers.index(default_provider))
         api_key = settings.groq_api_key
         model = settings.groq_model
+        ollama_base_url = settings.ollama_base_url
         if provider == "groq":
             api_key = st.text_input(labels["api_key"], type="password", value=api_key)
             model = st.text_input(labels["model"], value=model)
+        elif provider == "ollama":
+            ollama_base_url = st.text_input(labels["ollama_url"], value=ollama_base_url)
+            model = st.text_input(labels["ollama_model"], value=settings.ollama_model)
 
         submitted = st.form_submit_button(labels["launch"], type="primary")
 
@@ -397,7 +425,7 @@ def _render_analysis(labels: dict) -> None:
             weeks_per_month=weeks_per_month,
             locale=Locale(st.session_state.get("locale", "fr")),
         )
-        _launch(brand, assumptions, provider, api_key, model)
+        _launch(brand, assumptions, provider, api_key, model, ollama_base_url)
 
     status = st.session_state.get("status")
     if status == "review":

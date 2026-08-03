@@ -46,18 +46,29 @@ def build_runtime(
     api_key: str = "",
     model: str = "llama-3.3-70b-versatile",
     checkpoint_db: str = "ops_autopilot_checkpoints.db",
+    ollama_base_url: str = "http://localhost:11434",
 ) -> Runtime:
     """Build the graph with the right LLM clients.
 
-    ``crew_llm`` is only wired when a Groq key is present; otherwise the
-    deep-dive falls back to the deterministic degraded template.
+    ``crew_llm`` is wired for live providers (groq with a key, or ollama when
+    the local server is reachable); otherwise the deep-dive falls back to the
+    deterministic degraded template.
     """
-    llm = get_client(llm_provider=provider, api_key=api_key or "", model=model)
+    llm = get_client(
+        llm_provider=provider,
+        api_key=api_key or "",
+        model=model,
+        ollama_base_url=ollama_base_url,
+    )
     crew_llm = None
     if provider == "groq" and api_key:
         from crewai import LLM
 
         crew_llm = LLM(model=f"groq/{model}", api_key=api_key)
+    elif provider == "ollama" and llm.name == "ollama":
+        from crewai import LLM
+
+        crew_llm = LLM(model=f"ollama/{model or 'qwen2.5:3b'}", base_url=ollama_base_url, api_key="ollama")
     app = build_graph(llm=llm, crew_llm=crew_llm, checkpointer=sqlite_checkpointer(checkpoint_db))
     return Runtime(app=app, llm_name=llm.name)
 

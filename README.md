@@ -9,7 +9,7 @@ An assistant that analyzes a brand's operations, quantifies where time and money
 - **Human in the loop**: Must approve/edit/reject before final report
 - **Small-team product**: Email/password auth, analysis history, centralized config
 - **Bilingual**: FR and EN UI + reports with locale toggle
-- **LLM**: Groq free tier with retry/backoff, plus a deterministic offline fallback (mock)
+- **LLM**: Ollama local (no quota), Groq free tier with retry/backoff, plus a deterministic offline fallback (mock)
 - **Clean architecture**: Domain rules readable without opening LangGraph
 
 ## Quick Start
@@ -17,7 +17,8 @@ An assistant that analyzes a brand's operations, quantifies where time and money
 ### Prerequisites
 
 - Python 3.11+
-- Groq API key (optional; without it the app runs in offline mock mode)
+- Ollama installed + running with a model (`ollama pull qwen2.5:3b`), for local LLM mode
+- Groq API key (optional; enables the groq option, over the local Ollama default)
 
 ### 1. Install Python Dependencies
 
@@ -27,11 +28,13 @@ cp .env.example .env  # edit with your settings (APP_SECRET, GROQ_API_KEY, ...)
 ```
 
 Optional variables (defaults shown):
-- `GROQ_API_KEY` (optional; enables live LLM instead of the mock fallback)
+- `LLM_PROVIDER=mock` (`mock`, `ollama` or `groq`)
+- `OLLAMA_BASE_URL=http://localhost:11434`
+- `OLLAMA_MODEL=qwen2.5:3b`
+- `GROQ_API_KEY` (optional; enables the groq option in the provider list)
 - `GROQ_MODEL=llama-3.3-70b-versatile`
 - `DATABASE_URL=sqlite:///./ops_autopilot.db`
 - `DEFAULT_LOCALE=fr`
-- `LLM_PROVIDER=mock` (`mock` or `groq`)
 
 ### 2. Run the Application
 
@@ -51,7 +54,8 @@ make reset  # wipe local SQLite DBs (app + checkpoints)
 Each run pauses at the human review (`a`/`m`/`r`), persists state to
 `ops_autopilot_checkpoints.db` (`--checkpoint-db` to change), and resumes the same
 thread via LangGraph's `interrupt` / `Command(resume=...)`. Use `--groq-api-key` /
-`--groq-model` to enable live LLM calls.
+`--groq-model` to enable live Groq calls, or set `LLM_PROVIDER=ollama` for the
+local Ollama model (see `graph/cli.py` flags).
 
 **Streamlit UI (construction order steps 5-6):**
 ```bash
@@ -162,7 +166,8 @@ Per design spec `docs/superpowers/specs/2026-08-01-ops-autopilot-design.md`:
 7. ✅ Use-case layer (`app/`): CLI and UI drive the graph through one code path
 8. ✅ Coverage targets + CI (`.coveragerc`, pytest-cov, GitHub Actions; global floor 75%, spec targets per layer)
 9. ✅ Live LLM path validated (Groq + CrewAI): httpx pinned <0.28, robust JSON extraction for chat-model output
-10. ✅ v1 finishing: removed legacy Ollama, direct `bcrypt` (no passlib), Pydantic V2 config, hermetic test env (`tests/conftest.py`), end-to-end integration tests, eval suite v1.1 (ground-truth task parser, 10 cases)
+10. ✅ v1 finishing: removed dead legacy Ollama config (unwired), direct `bcrypt` (no passlib), Pydantic V2 config, hermetic test env (`tests/conftest.py`), end-to-end integration tests, eval suite v1.1 (ground-truth task parser, 10 cases)
+11. ✅ Ollama local LLM: `OllamaClient` (httpx, no quota), crew_llm via LiteLLM `ollama/<model>`, UI/CLI providers `mock | ollama | groq`, automatic mock fallback when the Ollama server is down
 
 ## Interview Demo
 

@@ -186,3 +186,24 @@ def test_sqlite_checkpointer_resumes_same_thread_across_instances(tmp_path):
 
     assert result["action"] == "approve"
     assert result["report"]
+
+
+class EmptyReportLLM(MockClient):
+    """MockClient that returns an empty executive report (LLM quality issue)."""
+
+    def executive_report(self, scored_tasks, deep_dives, assumptions, sector=None):
+        return ""
+
+
+def test_empty_report_degrades_to_mock_template():
+    """An empty LLM report must not kill the flow; the node substitutes the
+    degraded template so the UI always lands on a 'done' state."""
+    app = build_graph(llm=EmptyReportLLM())
+    thread = {"configurable": {"thread_id": "t-empty-report"}}
+
+    app.invoke(load_lumea(), config=thread)
+    result = resume(app, thread, "approve")
+
+    assert result["action"] == "approve"
+    assert result["report"], "empty LLM report must be replaced by the degraded template"
+    assert "Resume executif" in result["report"]

@@ -6,9 +6,11 @@ Pour tester l'app en 5 minutes, sans config, avec le compte de démo deja cree.
 
 Adresse : http://localhost:8501
 
-Elle tourne en **mode mock** (LLM hors ligne, deterministe). C'est le mode le
-plus fiable pour tester : il ne consomme aucun quota et repond en quelques
-secondes. Voir plus bas pour passer en mode groq (LLM reel).
+Elle tourne en **mode ollama** : LLM local (qwen2.5:3b), aucun quota, repond
+en quelques secondes. C'est le mode le plus pratique pour tester. Si le
+serveur Ollama est arrete, l'app rechute automatiquement sur le mode mock
+(LLM hors ligne, deterministe). Voir plus bas pour passer en mode groq (LLM
+reel, sujet au quota quotidien).
 
 Compte de test existant :
 - Email : `guide@test.com`
@@ -23,7 +25,7 @@ Compte de test existant :
 3. Clique "Se connecter"
 
 La page d'analyse s'affiche : preset Lumea charge, taux horaire a 40 EUR/h,
-fournisseur sur "mock".
+fournisseur sur "ollama".
 
 ### 2. Lancer une analyse
 
@@ -31,9 +33,9 @@ fournisseur sur "mock".
 2. En quelques secondes tu arrives a l'ecran **Revue humaine - Lumea** :
    - tableau des taches notees (ROI) : Shopify order processing, Instagram DM
      responses, Email support tickets, Product photography planning
-   - les 3 plans pilotes (en mode mock ils affichent "Template degrade (hors
-     ligne)"). C'est normal, c'est le fallback offline. En mode groq ils
-     sont generes par CrewAI.
+   - les 3 plans pilotes generes par CrewAI avec le modele local. Si le
+     serveur Ollama est down ou si le modele repond mal, ils affichent
+     "Template degrade (hors ligne)", c'est le fallback.
 3. Ouvre le panneau "Etapes" pour voir le pipeline : ingest, map_tasks, score,
    check_data, deep_dive.
 
@@ -67,7 +69,7 @@ fournisseur sur "mock".
 
 ```bash
 cd ~/projects/ops-autopilot
-make run        # mode mock, lit .env
+make run        # mode ollama (local) si LLM_PROVIDER=ollama dans .env
 ```
 
 Pour forcer le mode groq (LLM reel) :
@@ -76,8 +78,9 @@ Pour forcer le mode groq (LLM reel) :
 LLM_PROVIDER=groq GROQ_API_KEY=ta_cle .venv/bin/streamlit run ui/app.py
 ```
 
-Le mode groq est aussi utilisable depuis l'UI : dans le formulaire, choisis
-"Fournisseur = groq" et renseigne ta cle API Groq.
+Le fournisseur se change aussi depuis l'UI : dans le formulaire, choisis
+"Fournisseur" = ollama (local) ou groq. Le mode groq n'apparait que si une
+cle est configuree dans `.env`.
 
 ## CLI (sans UI)
 
@@ -85,6 +88,8 @@ Le mode groq est aussi utilisable depuis l'UI : dans le formulaire, choisis
 cd ~/projects/ops-autopilot
 make demo       # arc demo offline, mock LLM, preset lumea
 .venv/bin/python -m graph.cli run --preset lumea --non-interactive
+.venv/bin/python -m graph.cli run --llm-provider ollama --preset lumea
+.venv/bin/python -m graph.cli run --llm-provider groq --groq-api-key "$GROQ_API_KEY" --preset lumea
 .venv/bin/python -m graph.cli run --name "Acme" --sector D2C \
   --free-text "Instagram DMs: ~50/day, 2 min each, highly repetitive."
 ```
@@ -95,24 +100,26 @@ approuver, r pour rejeter.
 ## Tests et couverture
 
 ```bash
-make test                 # 85 tests, hermetiches, ~10 s
+make test                 # 95 tests, hermetiches, ~10 s
 make coverage             # 93 % de couverture globale
 ```
 
 Points d'attention :
 
-- Les tests UI sont isoles du reseau grace a `tests/conftest.py` : meme si
-  ton `.env` contient une cle Groq, les tests ne l'utilisent jamais.
+- Les tests sont isoles du reseau grace a `tests/conftest.py` : meme si ton
+  `.env` contient une cle Groq, les tests ne l'utilisent jamais. Le client
+  Ollama est teste via un transport HTTP mock (aucun vrai serveur en CI).
 - Le quota Groq quotidien (100 000 tokens) peut se vider en testant en mode
   groq. Le fallback mock prend alors le relais automatiquement, l'app reste
-  utilisable.
+  utilisable. En mode ollama il n'y a aucun quota.
 
 ## Depannage
 
 | Symptome | Cause | Solution |
 |---|---|---|
-| "Template degrade (hors ligne)" dans les plans pilotes | mode mock, ou quota Groq epuise | normal en mock ; en groq, attends la reset du quota |
-| Le rapport n'apparait pas en mode groq | quota 429, retries puis echec | repasse en mock ou attends |
+| "Template degrade (hors ligne)" dans les plans pilotes | mode mock, Ollama down, ou quota Groq epuise | normal en mock ; en ollama, verifie `ollama serve` ; en groq, attends la reset du quota |
+| L'analyse retombe sur mock alors que ollama est choisi | serveur Ollama arrete | lance `ollama serve`, puis relance l'analyse |
+| Le rapport n'apparait pas en mode groq | quota 429, retries puis echec | repasse en ollama ou mock, ou attends |
 | Port 8501 deja utilise | une autre instance tourne | `lsof -iTCP:8501 -sTCP:LISTEN` puis kill le PID |
 | L'app ne se lance pas | venv absent | `make install` |
 

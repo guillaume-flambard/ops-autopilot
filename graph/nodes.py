@@ -7,11 +7,14 @@ nodes stay plain, testable functions.
 
 from __future__ import annotations
 
+import logging
 from typing import Callable
 
 from langgraph.types import interrupt
 
 from domain.models import Assumptions
+
+logger = logging.getLogger(__name__)
 from domain.scoring import score_tasks, top_n
 
 
@@ -139,6 +142,11 @@ def report(state: dict, llm: LLMClient) -> dict:
     brand = state.get("brand")
     sector = brand.sector.value if brand is not None else None
     text = llm.executive_report(scored, dives, state["assumptions"], sector=sector)
+    if not (text or "").strip():
+        from llm.client import MockClient
+
+        logger.warning("report: empty LLM output; using degraded template")
+        text = MockClient().executive_report(scored, dives, state["assumptions"], sector=sector)
     return {
         "report": text,
         "step": "report",

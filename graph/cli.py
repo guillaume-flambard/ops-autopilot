@@ -65,16 +65,20 @@ def build_inputs(args) -> dict:
 
 
 def _crew_mode(args) -> str:
+    if args.llm_provider == "ollama":
+        return "crewai-ollama"
     return "crewai" if args.groq_api_key else "degrade"
 
 
 def run(args) -> int:
     inputs = build_inputs(args)
+    model = args.ollama_model if args.llm_provider == "ollama" else args.groq_model
     runtime = build_runtime(
         provider=args.llm_provider,
         api_key=args.groq_api_key,
-        model=args.groq_model,
+        model=model,
         checkpoint_db=args.checkpoint_db,
+        ollama_base_url=args.ollama_base_url,
     )
     thread_id = f"cli-{int(time.time())}"
     result = run_analysis(
@@ -119,9 +123,11 @@ def main(argv=None) -> int:
     run_p.add_argument("--hourly-rate", type=float)
     run_p.add_argument("--weeks-per-month", type=float)
     run_p.add_argument("--non-interactive", action="store_true")
-    run_p.add_argument("--llm-provider", default="mock", choices=["mock", "groq"])
+    run_p.add_argument("--llm-provider", default="mock", choices=["mock", "ollama", "groq"])
     run_p.add_argument("--groq-api-key", default="")
     run_p.add_argument("--groq-model", default="llama-3.3-70b-versatile")
+    run_p.add_argument("--ollama-base-url", default="http://localhost:11434")
+    run_p.add_argument("--ollama-model", default="qwen2.5:3b")
     run_p.add_argument("--checkpoint-db", default="ops_autopilot_checkpoints.db")
     run_p.set_defaults(func=run)
 

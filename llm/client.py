@@ -1,14 +1,16 @@
 """LLM client abstraction with retry and a deterministic fallback.
 
-Two implementations:
+Three implementations:
 
 - ``GroqClient``: real LLM calls (Groq free tier), with retry/backoff on
   rate limits. Used when a Groq API key is configured.
+- ``OllamaClient``: local LLM calls (Ollama server, no quota). Used when the
+  Ollama server is reachable and a model is available.
 - ``MockClient``: deterministic rule-based parser and canned deep-dive
   templates. Used when no key is set, so the CLI and tests run offline.
 
-The graph never talks to Groq directly; it receives an ``LLMClient`` at
-build time, which keeps nodes testable.
+The graph never talks to an LLM provider directly; it receives an
+``LLMClient`` at build time, which keeps nodes testable.
 """
 
 from __future__ import annotations
@@ -19,6 +21,8 @@ import random
 import re
 import time
 from typing import Optional
+
+import httpx
 
 from domain.models import Assumptions, DeepDive, ScoredTask, Task
 
@@ -189,11 +193,125 @@ class GroqClient(LLMClient):
         raise RuntimeError(f"Groq failed after {self.max_retries} retries: {last_error}")
 
 
-def get_client(llm_provider: str = "mock", api_key: str = "", model: str = "llama-3.3-70b-versatile") -> LLMClient:
+class OllamaClient(LLMClient):
+    """Local LLM calls through an Ollama server. No API key, no quota."""
+
+    name = "ollama"
+
+    def __init__(
+        self,
+        base_url: str = "http://localhost:11434",
+        model: str = "qwen2.5:3b",
+        max_retries: int = 2,
+        timeout: float = 60.0,
+        transport=None,
+    ):
+        self._base_url = base_url.rstrip("/")
+        self.model = model
+        self.max_retries = max_retries
+        self.timeout = timeout
+        self._client = httpx.Client(transport=transport, timeout=timeout)
+
+    def map_tasks_from_text(self, free_text: str, locale: str = "fr") -> list[Task]:
+        from llm.prompts import MAP_TASKS_PROMPT
+
+        prompt = MAP_TASKS_PROMPT.get(locale, MAP_TASKS_PROMPT["en"]).format(free_text=free_text)
+        raw = self._complete(prompt)
+        data = _extract_json(raw, expect_array=True)
+        return [Task(**item) for item in data]
+
+    def deep_dive(self, scored_tasks: list[ScoredTask], assumptions: Assumptions) -> list[DeepDive]:
+        dives = []
+        for scored in scored_tasks:
+            raw = self._complete(
+                f"Propose un plan pilote 2-3 semaines pour automatiser '{scored.task.name}' "
+                f"({scored.eur_per_month:.0f} EUR/mois). Reponds en JSON: substeps, proposed_tool, "
+                "agent_flow, main_risk, effort_weeks, pilot_plan."
+            )
+            try:
+                data = _extract_json(raw, expect_array=False)
+                data["task_name"] = scored.task.name
+                dives.append(DeepDive(**data))
+            except (json.JSONDecodeError, ValueError, TypeError, KeyError):
+                logger.warning("ollama deep_dive parse failed for %s; using degraded template", scored.task.name)
+                dives.append(MockClient().deep_dive([scored], assumptions)[0])
+        return dives
+
+    def executive_report(
+        self,
+        scored_tasks: list[ScoredTask],
+        deep_dives: list[DeepDive],
+        assumptions: Assumptions,
+        sector: str | None = None,
+    ) -> str:
+        from llm.prompts import REPORT_EXECUTIVE_PROMPT
+
+        total_hours = sum(s.hours_per_month for s in scored_tasks)
+        top = scored_tasks[0] if scored_tasks else None
+        prompt = REPORT_EXECUTIVE_PROMPT.get(
+            assumptions.locale.value,
+            REPORT_EXECUTIVE_PROMPT["en"],
+        ).format(
+            sector=sector or assumptions.locale.value,
+            total_hours=f"{total_hours:.0f}",
+            total_eur=f"{total_hours * assumptions.hourly_rate_eur:.0f}",
+            total_etp=f"{total_hours / 151.67:.2f}",
+            top_name=top.task.name if top else "n/a",
+        )
+        return self._complete(prompt)
+
+    def _complete(self, prompt: str, timeout: float | None = None) -> str:
+        last_error: Optional[Exception] = None
+        for attempt in range(self.max_retries):
+            try:
+                resp = self._client.post(
+                    f"{self._base_url}/api/chat",
+                    json={
+                        "model": self.model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "stream": False,
+                        "options": {"temperature": 0.2},
+                    },
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                return data.get("message", {}).get("content", "") or ""
+            except Exception as exc:  # connection refused, 5xx, malformed body
+                last_error = exc
+                delay = min(5.0, (1.5**attempt)) * (0.8 + 0.4 * random.random())
+                logger.warning("ollama retry %d/%d after %s (%.1fs)", attempt + 1, self.max_retries, exc, delay)
+                time.sleep(delay)
+        raise RuntimeError(f"Ollama failed after {self.max_retries} retries: {last_error}")
+
+
+def _ollama_reachable(base_url: str, timeout: float = 2.0) -> bool:
+    """Light reachability probe for the local Ollama server.
+
+    Called at runtime build time so an offline Ollama selection falls back to
+    the deterministic mock client instead of crashing mid-analysis.
+    """
+    try:
+        resp = httpx.get(f"{base_url.rstrip('/')}/api/tags", timeout=timeout)
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
+def get_client(
+    llm_provider: str = "mock",
+    api_key: str = "",
+    model: str = "llama-3.3-70b-versatile",
+    ollama_base_url: str = "http://localhost:11434",
+) -> LLMClient:
     if llm_provider == "groq" and api_key:
         return GroqClient(api_key=api_key, model=model)
     if llm_provider == "groq":
         logger.warning("LLM provider is groq but no API key set; falling back to mock")
+    if llm_provider == "ollama":
+        if _ollama_reachable(ollama_base_url):
+            return OllamaClient(base_url=ollama_base_url, model=model or "qwen2.5:3b")
+        logger.warning("Ollama server not reachable at %s; falling back to mock", ollama_base_url)
+        return MockClient()
     return MockClient()
 
 

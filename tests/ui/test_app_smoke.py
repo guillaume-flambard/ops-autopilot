@@ -185,13 +185,26 @@ def test_edit_rescores_with_new_rate(at: AppTest) -> None:
     assert after[0]["eur_per_month"] > before[0]["eur_per_month"], "higher rate must raise EUR/month"
 
 
-def test_custom_source_with_groq_renders_api_key_field(at: AppTest) -> None:
+def test_custom_source_with_groq_renders_api_key_field(at: AppTest, monkeypatch: pytest.MonkeyPatch) -> None:
+    import ui.app as ui_app
+
+    monkeypatch.setattr(ui_app.settings, "groq_api_key", "test-key")
     _radio(at, "Source").set_value("Personnalisee")
     at.run()
     _selectbox(at, "Fournisseur").set_value("groq")
     at.run()
     labels = [t.label for t in at.text_input]
     assert "Cle API Groq" in labels
+
+
+def test_custom_source_with_ollama_renders_url_and_model_fields(at: AppTest) -> None:
+    _radio(at, "Source").set_value("Personnalisee")
+    at.run()
+    _selectbox(at, "Fournisseur").set_value("ollama")
+    at.run()
+    labels = [t.label for t in at.text_input]
+    assert "URL serveur Ollama" in labels
+    assert "Modele Ollama" in labels
 
 
 def test_history_page_shows_persisted_analyses(at: AppTest) -> None:
