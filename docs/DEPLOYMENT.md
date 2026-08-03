@@ -49,6 +49,8 @@ file; pick based on where you already host things.
      `init_db()` creates the tables on first boot.
    - Free managed options: Supabase or Neon. Use the direct/pooled connection
      string they give you, swapping the scheme for `postgresql+psycopg://`.
+     Step-by-step walkthrough (provision → connect → verify persistence):
+     see [POSTGRES_SETUP.md](POSTGRES_SETUP.md).
    - The LangGraph checkpointer still uses a local (ephemeral) SQLite file for
      in-flight analysis state; that is transient and fine to lose on restart.
    - For an interview demo, the SQLite fallback is fine — just know accounts
