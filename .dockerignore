@@ -1,0 +1,22 @@
+# Keep the build context small and never bake local state into the image.
+.git
+.github
+.venv
+.venv-*
+__pycache__
+**/__pycache__
+*.pyc
+.pytest_cache
+.coverage
+htmlcov
+
+# Local databases (SQLite app + LangGraph checkpoints) — never ship these.
+*.db
+ops_autopilot*.db
+
+# Local env / secrets
+.env
+
+# Docs and dev-only files are not needed at runtime.
+docs
+tests

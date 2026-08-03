@@ -1,7 +1,7 @@
 # Ops Autopilot - one-command local operations.
 # Everything runs from the checked-out repo; no system installs required.
 
-.PHONY: install run test coverage reset demo
+.PHONY: install run test coverage reset demo docker-build docker-run
 
 install: ## Create the venv and install pinned deps
 	uv venv
@@ -25,3 +25,10 @@ reset: ## Delete the local SQLite DBs (app + checkpoints)
 
 demo: ## Offline 6-minute demo arc (mock LLM)
 	.venv/bin/python -m graph.cli run --preset lumea --non-interactive
+
+docker-build: ## Build the container image (pins Python 3.12)
+	docker build -t ops-autopilot .
+
+docker-run: ## Run the container locally on :8501 (reads .env)
+	cp -n .env.example .env || true
+	docker run --rm -p 8501:8501 --env-file .env ops-autopilot
