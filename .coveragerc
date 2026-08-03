@@ -1,0 +1,14 @@
+[run]
+source = domain, graph, crew, llm, app, db
+omit = */tests/*
+
+[report]
+show_missing = True
+
+# Coverage targets per design spec, section 9:
+#   domain  >= 90%   (scoring, models)
+#   graph   >= 70%   (edges, state transitions, incl. CLI entrypoint)
+#   crew    >= 50%   (agent orchestration, output structure)
+# UI layer is exercised via Streamlit AppTest (manual + headless); it is
+# excluded from the bytecode metric because the subprocess is not measured.
+# CI enforces a global floor via `--cov-fail-under` (see .github/workflows/ci.yml).

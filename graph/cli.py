@@ -1,6 +1,7 @@
 """CLI entrypoint for the analysis graph. No UI, prints only.
 
 Construction-order step 1: proves the full flow works before Streamlit.
+Step 7: graph driving lives in the app/ use-case layer.
 
 Usage:
     python graph/cli.py run --preset lumea
@@ -11,24 +12,12 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 import sys
-from pathlib import Path
+import time
 
-from langgraph.types import Command
-
-from llm.client import get_client
+from app.presets import load_preset
+from app.run_analysis import build_runtime, resume_review, run_analysis
 from domain.models import Assumptions, BrandProfile, Sector
-from graph.build import build_graph
-from graph.checkpointer import sqlite_checkpointer
-from graph.driver import drive
-
-PROFILES_DIR = Path(__file__).resolve().parents[1] / "profiles"
-
-
-def load_preset(name: str) -> BrandProfile:
-    with open(PROFILES_DIR / f"{name}.json") as f:
-        return BrandProfile(**json.load(f))
 
 
 def prompt_review(state: dict) -> str:
@@ -75,44 +64,39 @@ def build_inputs(args) -> dict:
     return {"brand": brand, "assumptions": assumptions}
 
 
-def _crew_llm(args):
-    """CrewAI model for the deep-dive, or None to use the degraded template."""
-    if args.llm_provider != "groq" or not args.groq_api_key:
-        return None
-    from crewai import LLM
-
-    return LLM(model=f"groq/{args.groq_model}", api_key=args.groq_api_key)
-
-
-def _drive(app, config, payload):
-    """Stream one graph run. Returns (accumulated state, interrupt payload or None)."""
-    final, events, interrupted = drive(app, config, payload)
-    for node, event in events:
-        print(f"  [{node}] {event}")
-    return final, interrupted
+def _crew_mode(args) -> str:
+    return "crewai" if args.groq_api_key else "degrade"
 
 
 def run(args) -> int:
-    import time
-
     inputs = build_inputs(args)
-    llm = get_client(llm_provider=args.llm_provider, api_key=args.groq_api_key, model=args.groq_model)
-    checkpointer = sqlite_checkpointer(args.checkpoint_db)
-    app = build_graph(llm=llm, crew_llm=_crew_llm(args), checkpointer=checkpointer)
-
+    runtime = build_runtime(
+        provider=args.llm_provider,
+        api_key=args.groq_api_key,
+        model=args.groq_model,
+        checkpoint_db=args.checkpoint_db,
+    )
     thread_id = f"cli-{int(time.time())}"
-    config = {"configurable": {"thread_id": thread_id}}
-    crew_mode = "crewai" if args.groq_api_key else "degrade"
-    print(f"=== Analyse '{inputs['brand'].name}' (llm={llm.name}, deep_dive={crew_mode}) ===")
-
-    payload: dict = inputs
+    result = run_analysis(
+        brand=inputs["brand"],
+        assumptions=inputs["assumptions"],
+        runtime=runtime,
+        thread_id=thread_id,
+    )
+    print(
+        f"=== Analyse '{inputs['brand'].name}' "
+        f"(llm={runtime.llm_name}, deep_dive={_crew_mode(args)}) ==="
+    )
+    config = result.config
     while True:
-        final, interrupted = _drive(app, config, payload)
-        if interrupted is None:
+        for node, event in result.events:
+            print(f"  [{node}] {event}")
+        if result.interrupted is None:
             break
-        action = "approve" if args.non_interactive else prompt_review(interrupted)
-        payload = Command(resume=action)
+        action = "approve" if args.non_interactive else prompt_review(result.interrupted)
+        result = resume_review(runtime, config, action)
 
+    final = result.final
     if final.get("action") == "reject":
         print("\n=== Analyse rejetee, aucun rapport final genere. ===")
         return 0

@@ -75,10 +75,10 @@ ops-autopilot/
     scoring.py      # ROI formulas - unit-testable without LLM
     formulas.md     # Human-readable formula docs
 
-  app/              # Use cases
-    run_analysis.py
-    resume_review.py
-    list_history.py
+  app/              # Use-case layer (shared by CLI and UI) [step 7]
+    run_analysis.py # build_runtime, run_analysis, resume_review (single code path)
+    presets.py      # load_preset from profiles/*.json
+    list_history.py # history page use case
 
   graph/            # LangGraph adapter
     state.py
@@ -114,6 +114,15 @@ ops-autopilot/
 pytest
 ```
 
+### Coverage
+
+```bash
+pytest --cov=domain --cov=graph --cov=crew --cov=llm --cov=app --cov=db --cov-report=term
+```
+
+Targets (design spec, section 9): domain 90%+, graph 70%+, crew 50%+. CI
+enforces a global floor of 75% (`.github/workflows/ci.yml`).
+
 ### Domain Layer Tests
 
 ```bash
@@ -136,6 +145,8 @@ Per design spec `docs/superpowers/specs/2026-08-01-ops-autopilot-design.md`:
 4. ✅ Checkpointer + `interrupt` / `Command(resume=...)` (SQLite, `--checkpoint-db`)
 5. ✅ Streamlit UI (form, timeline, review Approve/Edit/Reject, final report)
 6. ✅ Auth (bcrypt), analysis history, DB repositories (SQLAlchemy, SQLite/Postgres-ready)
+7. ✅ Use-case layer (`app/`): CLI and UI drive the graph through one code path
+8. ✅ Coverage targets + CI (`.coveragerc`, pytest-cov, GitHub Actions; global floor 75%, spec targets per layer)
 
 ## Interview Demo
 

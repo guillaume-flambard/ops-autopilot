@@ -29,6 +29,8 @@ python-dotenv==1.2.2
 
 # Development & testing
 pytest==9.1.1
+pytest-cov==7.1.0
+coverage==7.15.3
 
 # ---------------------------------------------------------------------------
 # Future steps (not yet implemented - do NOT pin until the step lands):

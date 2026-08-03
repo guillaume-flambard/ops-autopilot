@@ -14,8 +14,10 @@ import time
 from pathlib import Path
 
 import streamlit as st
-from langgraph.types import Command
 
+from app.list_history import list_history
+from app.presets import load_preset
+from app.run_analysis import build_runtime, resume_review, run_analysis
 from domain.models import Assumptions, BrandProfile, Locale, Sector
 from db.repo import (
     authenticate,
@@ -23,16 +25,10 @@ from db.repo import (
     create_analysis,
     create_user,
     init_db,
-    list_analyses,
     user_to_dict,
 )
-from graph.build import build_graph
-from graph.checkpointer import sqlite_checkpointer
-from graph.driver import drive
-from llm.client import get_client
 
 ROOT = Path(__file__).resolve().parents[1]
-PROFILES_DIR = ROOT / "profiles"
 CHECKPOINT_DB = checkpoint_db_path()
 
 T = {
@@ -143,41 +139,24 @@ T = {
 }
 
 
-def load_preset(name: str) -> BrandProfile:
-    import json
-
-    with open(PROFILES_DIR / f"{name}.json") as f:
-        return BrandProfile(**json.load(f))
-
-
 def _build(provider: str, api_key: str, model: str):
-    llm = get_client(llm_provider=provider, api_key=api_key or "", model=model)
-    crew_llm = None
-    if provider == "groq" and api_key:
-        from crewai import LLM
-
-        crew_llm = LLM(model=f"groq/{model}", api_key=api_key)
-    return build_graph(
-        llm=llm,
-        crew_llm=crew_llm,
-        checkpointer=sqlite_checkpointer(CHECKPOINT_DB),
-    )
+    return build_runtime(provider=provider, api_key=api_key or "", model=model, checkpoint_db=CHECKPOINT_DB)
 
 
 def _launch(brand: BrandProfile, assumptions: Assumptions, provider: str, api_key: str, model: str) -> None:
-    app = _build(provider, api_key, model)
+    runtime = _build(provider, api_key, model)
     thread_id = f"ui-{int(time.time() * 1000)}"
-    config = {"configurable": {"thread_id": thread_id}}
     try:
-        final, events, interrupted = drive(app, config, {"brand": brand, "assumptions": assumptions})
+        result = run_analysis(brand=brand, assumptions=assumptions, runtime=runtime, thread_id=thread_id)
     except Exception as exc:
         st.session_state["error"] = str(exc)
         return
+    final, events, interrupted = result.final, result.events, result.interrupted
     st.session_state.update(
         {
             "status": "review" if interrupted is not None else ("done" if final.get("report") else "rejected"),
             "thread_id": thread_id,
-            "config": config,
+            "config": result.config,
             "events": events,
             "interrupted": interrupted,
             "final": final,
@@ -186,6 +165,7 @@ def _launch(brand: BrandProfile, assumptions: Assumptions, provider: str, api_ke
             "provider": provider,
             "api_key": api_key,
             "model": model,
+            "runtime": runtime,
             "error": None,
             "persisted_id": None,
         }
@@ -193,21 +173,25 @@ def _launch(brand: BrandProfile, assumptions: Assumptions, provider: str, api_ke
 
 
 def _resume(action: str, rate: float | None = None, locale: str | None = None) -> None:
-    app = _build(
-        st.session_state.get("provider", "mock"),
-        st.session_state.get("api_key", ""),
-        st.session_state.get("model", "llama-3.3-70b-versatile"),
-    )
+    runtime = st.session_state.get("runtime")
+    if runtime is None:
+        runtime = _build(
+            st.session_state.get("provider", "mock"),
+            st.session_state.get("api_key", ""),
+            st.session_state.get("model", "llama-3.3-70b-versatile"),
+        )
+        st.session_state["runtime"] = runtime
     config = st.session_state["config"]
+    edit_assumptions = None
     if rate is not None:
         current = st.session_state["interrupted"]["assumptions"]
-        new = Assumptions(
+        edit_assumptions = Assumptions(
             hourly_rate_eur=rate,
             weeks_per_month=current["weeks_per_month"],
             locale=Locale(locale or current["locale"]),
         )
-        app.update_state(config, {"assumptions": new})
-    final, events, interrupted = drive(app, config, Command(resume=action))
+    result = resume_review(runtime, config, action, assumptions=edit_assumptions)
+    final, events, interrupted = result.final, result.events, result.interrupted
     st.session_state["events"].extend(events)
     st.session_state["final"].update(final)
     st.session_state["interrupted"] = interrupted
@@ -315,7 +299,7 @@ def _render_rejected(labels: dict) -> None:
 
 def _render_history(labels: dict) -> None:
     st.subheader(labels["nav_history"])
-    rows = list_analyses(st.session_state["user"]["id"])
+    rows = list_history(st.session_state["user"]["id"])
     if not rows:
         st.info(labels["history_empty"])
         return
