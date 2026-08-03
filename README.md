@@ -56,13 +56,15 @@ Each run pauses at the human review (`a`/`m`/`r`), persists state to
 thread via LangGraph's `interrupt` / `Command(resume=...)`. Use `--groq-api-key` /
 `--groq-model` to enable live LLM calls.
 
-**Streamlit UI (construction order step 5):**
+**Streamlit UI (construction order steps 5-6):**
 ```bash
 streamlit run ui/app.py
 ```
-Form (preset or custom brand + assumptions) → live timeline → human review
-(Approver / Modifier / Rejeter) → final report. State persists in
-`ops_autopilot_checkpoints.db`, so a page refresh resumes the same thread.
+Register/login (email/password, bcrypt-hashed) → input form (preset or custom
+brand + assumptions) → live timeline → human review (Approver / Modifier /
+Rejeter) → final report, persisted to SQLite and listed on the Historique page.
+Checkpoints persist in `ops_autopilot_checkpoints.db`, so a page refresh resumes
+the same thread.
 
 ## Architecture
 
@@ -94,9 +96,11 @@ ops-autopilot/
     prompts.py
   graph/checkpointer.py # JsonPlus serde + Pydantic-safe SQLite saver [step 4]
   graph/driver.py    # Shared stream-until-interrupt driver (CLI + UI)
-  db/               # SQLite repositories; Postgres-ready schema [step 6]
-  ui/               # Thin Streamlit layer [step 5]
-    app.py          # Form -> review -> report, Approve/Edit/Reject
+  db/               # SQLite repositories; Postgres-ready schema (users, analyses)
+    models.py       # SQLAlchemy 2.0 ORM (User, Analysis)
+    repo.py         # auth + analysis CRUD, cached engines, checkpoint path
+  ui/               # Thin Streamlit layer [steps 5-6]
+    app.py          # Login -> form -> review -> report + history page
   profiles/         # Lumea (D2C), SaaS presets
   tests/
   docs/
@@ -131,7 +135,7 @@ Per design spec `docs/superpowers/specs/2026-08-01-ops-autopilot-design.md`:
 3. ✅ CrewAI inside `deep_dive` (testable in isolation; degrades offline)
 4. ✅ Checkpointer + `interrupt` / `Command(resume=...)` (SQLite, `--checkpoint-db`)
 5. ✅ Streamlit UI (form, timeline, review Approve/Edit/Reject, final report)
-6. ⏳ Auth, history, DB repositories
+6. ✅ Auth (bcrypt), analysis history, DB repositories (SQLAlchemy, SQLite/Postgres-ready)
 
 ## Interview Demo
 

@@ -1,8 +1,8 @@
-"""Ops Autopilot - Streamlit UI (construction-order step 5).
+"""Ops Autopilot - Streamlit UI (construction-order step 6).
 
-Thin layer over the LangGraph: input form -> stream to the human review
-interrupt -> Approve / Edit / Reject -> final report. No auth or persistent
-history yet (step 6 adds DB repositories).
+Thin layer over the LangGraph: login -> input form -> stream to the human
+review interrupt -> Approve / Edit / Reject -> final report, with analyses
+persisted to SQLite and a history page.
 
 Run:
     streamlit run ui/app.py
@@ -17,6 +17,15 @@ import streamlit as st
 from langgraph.types import Command
 
 from domain.models import Assumptions, BrandProfile, Locale, Sector
+from db.repo import (
+    authenticate,
+    checkpoint_db_path,
+    create_analysis,
+    create_user,
+    init_db,
+    list_analyses,
+    user_to_dict,
+)
 from graph.build import build_graph
 from graph.checkpointer import sqlite_checkpointer
 from graph.driver import drive
@@ -24,10 +33,22 @@ from llm.client import get_client
 
 ROOT = Path(__file__).resolve().parents[1]
 PROFILES_DIR = ROOT / "profiles"
-CHECKPOINT_DB = str(ROOT / "ops_autopilot_checkpoints.db")
+CHECKPOINT_DB = checkpoint_db_path()
 
 T = {
     "fr": {
+        "login_title": "Connexion",
+        "login_subtitle": "Connectez-vous ou creez un compte",
+        "email": "Email",
+        "password": "Mot de passe",
+        "login_btn": "Se connecter",
+        "register_btn": "Creer un compte",
+        "login_failed": "Email ou mot de passe incorrect.",
+        "register_exists": "Cet email est deja enregistre.",
+        "nav": "Navigation",
+        "nav_analyse": "Nouvelle analyse",
+        "nav_history": "Historique",
+        "logout": "Se deconnecter",
         "brand": "1. Marque",
         "source": "Source",
         "preset": "Preset",
@@ -39,7 +60,6 @@ T = {
         "assumptions": "2. Hypotheses",
         "hourly_rate": "Taux horaire (EUR)",
         "weeks_per_month": "Semaines / mois",
-        "language": "Langue",
         "llm": "3. LLM",
         "provider": "Fournisseur",
         "api_key": "Cle API Groq",
@@ -64,10 +84,23 @@ T = {
         "report": "Rapport final",
         "rejected": "Analyse rejetee, aucun rapport genere.",
         "new_analysis": "Nouvelle analyse",
-        "history": "Historique (session)",
-        "totals": "Totaux",
+        "history_choice": "Analyse",
+        "history_empty": "Aucune analyse enregistree pour ce compte.",
+        "history_no_report": "Analyse rejetee : aucun rapport.",
     },
     "en": {
+        "login_title": "Login",
+        "login_subtitle": "Sign in or create an account",
+        "email": "Email",
+        "password": "Password",
+        "login_btn": "Sign in",
+        "register_btn": "Create account",
+        "login_failed": "Wrong email or password.",
+        "register_exists": "This email is already registered.",
+        "nav": "Navigation",
+        "nav_analyse": "New analysis",
+        "nav_history": "History",
+        "logout": "Sign out",
         "brand": "1. Brand",
         "source": "Source",
         "preset": "Preset",
@@ -79,7 +112,6 @@ T = {
         "assumptions": "2. Assumptions",
         "hourly_rate": "Hourly rate (EUR)",
         "weeks_per_month": "Weeks / month",
-        "language": "Language",
         "llm": "3. LLM",
         "provider": "Provider",
         "api_key": "Groq API key",
@@ -104,8 +136,9 @@ T = {
         "report": "Final report",
         "rejected": "Analysis rejected, no report generated.",
         "new_analysis": "New analysis",
-        "history": "History (session)",
-        "totals": "Totals",
+        "history_choice": "Analysis",
+        "history_empty": "No saved analysis for this account.",
+        "history_no_report": "Rejected analysis: no report.",
     },
 }
 
@@ -154,6 +187,7 @@ def _launch(brand: BrandProfile, assumptions: Assumptions, provider: str, api_ke
             "api_key": api_key,
             "model": model,
             "error": None,
+            "persisted_id": None,
         }
     )
 
@@ -179,28 +213,35 @@ def _resume(action: str, rate: float | None = None, locale: str | None = None) -
     st.session_state["interrupted"] = interrupted
     if interrupted is not None:
         st.session_state["status"] = "review"
+        st.session_state["persisted_id"] = None
     elif final.get("action") == "reject":
         st.session_state["status"] = "rejected"
         st.session_state["report"] = None
     elif final.get("report"):
         st.session_state["status"] = "done"
         st.session_state["report"] = final["report"]
-    _append_history()
 
 
-def _append_history() -> None:
-    status = st.session_state["status"]
-    if status not in ("done", "rejected"):
+def _persist_analysis() -> None:
+    status = st.session_state.get("status")
+    mapping = {"done": "approved", "rejected": "rejected"}
+    if status not in mapping or st.session_state.get("persisted_id"):
         return
-    history = st.session_state.get("history", [])
-    history.append(
-        {
-            "brand": st.session_state["brand_name"],
-            "status": status,
-            "when": time.strftime("%H:%M:%S"),
-        }
+    final = st.session_state.get("final", {})
+    assumptions = final.get("assumptions")
+    result = {
+        "scored_tasks": [s.model_dump(mode="json") for s in final.get("scored_tasks", [])],
+        "deep_dives": [d.model_dump(mode="json") for d in final.get("deep_dives", [])],
+        "brand": final["brand"].model_dump(mode="json") if final.get("brand") else {},
+    }
+    st.session_state["persisted_id"] = create_analysis(
+        user_id=st.session_state["user"]["id"],
+        brand_name=st.session_state["brand_name"],
+        review_status=mapping[status],
+        assumptions=assumptions.model_dump(mode="json") if assumptions else {},
+        result=result,
+        report=st.session_state.get("report"),
     )
-    st.session_state["history"] = history
 
 
 def _render_timeline(labels: dict) -> None:
@@ -260,7 +301,7 @@ def _render_done(labels: dict) -> None:
     _render_timeline(labels)
     st.markdown(st.session_state["report"] or "")
     if st.button(labels["new_analysis"]):
-        for key in ("status", "interrupted", "report", "final"):
+        for key in ("status", "interrupted", "report", "final", "persisted_id"):
             st.session_state.pop(key, None)
 
 
@@ -268,21 +309,53 @@ def _render_rejected(labels: dict) -> None:
     st.subheader(f"{labels['rejected']} - {st.session_state['brand_name']}")
     _render_timeline(labels)
     if st.button(labels["new_analysis"]):
-        for key in ("status", "interrupted", "report", "final"):
+        for key in ("status", "interrupted", "report", "final", "persisted_id"):
             st.session_state.pop(key, None)
 
 
-def main() -> None:
-    st.set_page_config(page_title="Ops Autopilot", layout="wide")
-    st.title("Ops Autopilot")
+def _render_history(labels: dict) -> None:
+    st.subheader(labels["nav_history"])
+    rows = list_analyses(st.session_state["user"]["id"])
+    if not rows:
+        st.info(labels["history_empty"])
+        return
+    options = {
+        f"#{r['id']} - {r['brand_name']} ({r['review_status']}, {str(r['created_at'])[:16]})": r for r in rows
+    }
+    choice = st.selectbox(labels["history_choice"], list(options))
+    row = options[choice]
+    if row.get("report"):
+        st.markdown(row["report"])
+    else:
+        st.warning(labels["history_no_report"])
 
-    if st.session_state.get("error"):
-        st.error(st.session_state["error"])
 
+def _render_login(labels: dict) -> None:
+    st.subheader(labels["login_subtitle"])
+    email = st.text_input(labels["email"])
+    password = st.text_input(labels["password"], type="password")
+    col1, col2 = st.columns(2)
+    if col1.button(labels["login_btn"], type="primary"):
+        user = authenticate(email, password)
+        if user is not None:
+            st.session_state["user"] = user_to_dict(user)
+            st.session_state["locale"] = labels["_key"]
+            st.rerun()
+        else:
+            st.error(labels["login_failed"])
+    if col2.button(labels["register_btn"]):
+        try:
+            user = create_user(email, password)
+        except ValueError:
+            st.error(labels["register_exists"])
+            return
+        st.session_state["user"] = user_to_dict(user)
+        st.session_state["locale"] = labels["_key"]
+        st.rerun()
+
+
+def _render_analysis(labels: dict) -> None:
     with st.sidebar.form("input_form"):
-        locale = st.selectbox("Langue / Language", ["fr", "en"])
-        labels = T[locale]
-
         st.markdown(f"**{labels['brand']}**")
         source = st.radio(labels["source"], [labels["preset"], labels["custom"]], horizontal=True)
         preset = "lumea"
@@ -329,7 +402,7 @@ def main() -> None:
         assumptions = Assumptions(
             hourly_rate_eur=hourly_rate,
             weeks_per_month=weeks_per_month,
-            locale=Locale(locale),
+            locale=Locale(st.session_state.get("locale", "fr")),
         )
         _launch(brand, assumptions, provider, api_key, model)
 
@@ -340,14 +413,42 @@ def main() -> None:
         _render_done(labels)
     elif status == "rejected":
         _render_rejected(labels)
-    elif "history" in st.session_state:
-        history = st.session_state["history"]
-        if history:
-            with st.expander(labels["history"], expanded=True):
-                for h in history:
-                    st.write(f"- {h['when']} **{h['brand']}** - {h['status']}")
-        else:
-            st.info("No analysis run in this session yet.")
+
+    _persist_analysis()
+
+
+def main() -> None:
+    st.set_page_config(page_title="Ops Autopilot", layout="wide")
+    st.title("Ops Autopilot")
+
+    init_db()
+
+    if st.session_state.get("error"):
+        st.error(st.session_state["error"])
+
+    if "user" not in st.session_state:
+        lang = st.selectbox("Langue / Language", ["fr", "en"])
+        labels = T[lang]
+        labels = {**labels, "_key": lang}
+        _render_login(labels)
+        if "user" not in st.session_state:
+            return
+
+    locale_key = st.session_state.get("locale", "fr")
+    labels = T[locale_key]
+
+    with st.sidebar:
+        st.write(f"👤 {st.session_state['user']['email']}")
+        page = st.radio(labels["nav"], [labels["nav_analyse"], labels["nav_history"]])
+        if st.button(labels["logout"]):
+            for key in ("user", "status", "interrupted", "report", "final", "persisted_id", "error"):
+                st.session_state.pop(key, None)
+            st.rerun()
+
+    if page == labels["nav_history"]:
+        _render_history(labels)
+    else:
+        _render_analysis(labels)
 
 
 main()

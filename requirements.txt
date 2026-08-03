@@ -13,8 +13,14 @@ setuptools<80
 # LLM clients
 groq==0.11.0
 
-# Streamlit UI (step 5)
+# Streamlit UI (steps 5-6: auth + analysis history)
 streamlit==1.60.0
+
+# Persistence & auth (step 6)
+sqlalchemy==2.0.35
+passlib==1.7.4
+# passlib needs bcrypt<5 (4.0.1); bcrypt 5.x breaks passlib's bcrypt backend
+bcrypt==4.0.1
 
 # Domain config
 pydantic==2.13.4
@@ -26,6 +32,5 @@ pytest==9.1.1
 
 # ---------------------------------------------------------------------------
 # Future steps (not yet implemented - do NOT pin until the step lands):
-#   step 6    : sqlalchemy, passlib, bcrypt, python-jose[cryptography]
 #   (legacy)  : ollama
 # langchain / langchain-core are transitive deps of crewai+langgraph; do not pin.
