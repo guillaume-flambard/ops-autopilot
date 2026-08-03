@@ -18,6 +18,7 @@ import streamlit as st
 from app.list_history import list_history
 from app.presets import load_preset
 from app.run_analysis import build_runtime, resume_review, run_analysis
+from config import settings
 from domain.models import Assumptions, BrandProfile, Locale, Sector
 from db.repo import (
     authenticate,
@@ -363,11 +364,13 @@ def _render_analysis(labels: dict) -> None:
         weeks_per_month = st.number_input(labels["weeks_per_month"], min_value=1.0, max_value=6.0, value=4.33)
 
         st.markdown(f"**{labels['llm']}**")
-        provider = st.selectbox(labels["provider"], ["mock", "groq"])
-        api_key = ""
-        model = "llama-3.3-70b-versatile"
+        providers = ["mock", "groq"]
+        default_provider = "groq" if settings.llm_provider == "groq" and settings.groq_api_key else "mock"
+        provider = st.selectbox(labels["provider"], providers, index=providers.index(default_provider))
+        api_key = settings.groq_api_key
+        model = settings.groq_model
         if provider == "groq":
-            api_key = st.text_input(labels["api_key"], type="password")
+            api_key = st.text_input(labels["api_key"], type="password", value=api_key)
             model = st.text_input(labels["model"], value=model)
 
         submitted = st.form_submit_button(labels["launch"], type="primary")

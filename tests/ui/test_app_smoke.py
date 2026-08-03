@@ -25,6 +25,11 @@ from db.repo import create_user, get_user_by_email, init_db, user_to_dict
 
 _TMP = tempfile.mkdtemp(prefix="oa-ui-test-")
 os.environ["DATABASE_URL"] = "sqlite:///" + os.path.join(_TMP, "test.db")
+# Keep the UI hermetic: never launch real Groq calls during tests, even if a
+# local .env sets a live key / provider.
+os.environ["LLM_PROVIDER"] = "mock"
+os.environ["GROQ_API_KEY"] = ""
+os.environ["GROQ_MODEL"] = "llama-3.3-70b-versatile"
 init_db()
 try:
     _SEED_USER = user_to_dict(create_user("seeded@example.com", "pw"))
