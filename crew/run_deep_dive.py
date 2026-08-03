@@ -11,8 +11,6 @@ from __future__ import annotations
 import json
 import logging
 
-from crewai import Crew, Process
-
 from domain.models import Assumptions, DeepDive, ScoredTask
 from llm.client import degraded_deep_dive
 
@@ -28,10 +26,18 @@ def run_deep_dive(
     if llm is None or not scored_tasks:
         return degraded_deep_dive(scored_tasks, assumptions)
 
-    from crew.agents import build_agents
-    from crew.tasks import build_tasks
-
     try:
+        # Import CrewAI lazily: it is a heavy dependency (litellm, chromadb,
+        # onnxruntime, ...) that is only needed for a live deep-dive. Keeping
+        # it out of module import means the app still boots — login, history
+        # and mock/groq analysis all work — even when CrewAI cannot be
+        # imported on the runtime (e.g. a Python version it has no wheels for).
+        # An ImportError here degrades to the deterministic template below.
+        from crewai import Crew, Process
+
+        from crew.agents import build_agents
+        from crew.tasks import build_tasks
+
         agents = build_agents(llm, locale=locale)
         tasks = build_tasks(scored_tasks, assumptions, agents, locale=locale)
         crew = Crew(agents=agents, tasks=tasks, process=Process.sequential, verbose=False)

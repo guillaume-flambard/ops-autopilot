@@ -35,11 +35,26 @@ file; pick based on where you already host things.
      Ollama, so `ollama` would fall back to mock anyway. With a Groq key the
      UI offers `groq`, which is the recommended provider for site analysis.
    - `JINA_API_KEY` lifts the r.jina.ai rate limit for website analysis.
-4. **Persistent storage**: Streamlit Cloud instances are ephemeral, so the
-   SQLite files (`ops_autopilot.db`, `ops_autopilot_checkpoints.db`) reset on
-   redeploy. For persistent history, attach a persistent disk (paying plans)
-   and point `DATABASE_URL` and `CHECKPOINT_DB` at that volume. For an
-   interview demo, ephemeral storage is fine.
+4. **Persistent storage**: Streamlit Cloud instances are ephemeral and their
+   working directory is read-only, so the default SQLite files do not persist
+   (the app falls back to a writable temp dir that resets on every redeploy /
+   restart — accounts and history are lost). For real persistence, point
+   `DATABASE_URL` at a managed Postgres and add it to the secrets:
+   ```toml
+   DATABASE_URL="postgresql+psycopg://user:pass@host:5432/ops_autopilot"
+   ```
+   - The `psycopg[binary]` driver is already in `requirements.txt` (it ships
+     cp314 wheels, so it installs on the Streamlit Cloud runtime). No app
+     changes are needed — every repo function is URL-agnostic and
+     `init_db()` creates the tables on first boot.
+   - Free managed options: Supabase or Neon. Use the direct/pooled connection
+     string they give you, swapping the scheme for `postgresql+psycopg://`.
+     Step-by-step walkthrough (provision → connect → verify persistence):
+     see [POSTGRES_SETUP.md](POSTGRES_SETUP.md).
+   - The LangGraph checkpointer still uses a local (ephemeral) SQLite file for
+     in-flight analysis state; that is transient and fine to lose on restart.
+   - For an interview demo, the SQLite fallback is fine — just know accounts
+     reset when the instance recycles.
 
 ### Option B - VPS (single box)
 

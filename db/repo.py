@@ -40,6 +40,35 @@ def _verify_password(password: str, password_hash: str) -> bool:
 
 
 _sqlite_path_cache: dict[str, str] = {}
+_fallback_dir_cache: dict[str, str] = {}
+
+
+def _writable_dir() -> str:
+    """A process-stable, writable directory for ephemeral local DB files.
+
+    Created once per process (cached) so every SQLite file the app falls back
+    to — the app tables and the LangGraph checkpointer — lands in the same
+    place and stays consistent across Streamlit reruns within a run.
+    """
+    if "dir" not in _fallback_dir_cache:
+        import tempfile
+
+        _fallback_dir_cache["dir"] = tempfile.mkdtemp(prefix="ops-autopilot-")
+    return _fallback_dir_cache["dir"]
+
+
+def _writable_file(path: str, default_name: str) -> str:
+    """Return ``path`` if its directory is writable, else a temp-dir sibling.
+
+    Used for local SQLite files (app DB, checkpointer) so a read-only working
+    directory (Streamlit Cloud's ``/mount/src/...``) does not make writes fail.
+    """
+    parent = os.path.dirname(os.path.abspath(path))
+    if os.access(parent, os.W_OK):
+        return path
+    fallback = os.path.join(_writable_dir(), os.path.basename(path) or default_name)
+    logger.warning("dir %s not writable; using %s (ephemeral)", parent, fallback)
+    return fallback
 
 
 def _resolve_sqlite_path(url: str) -> str:
@@ -49,32 +78,31 @@ def _resolve_sqlite_path(url: str) -> str:
     so a relative path like ``./ops_autopilot.db`` cannot be written and
     account creation fails. If the target directory is not writable, fall back
     to a per-run temp dir (still writable). Local dev keeps its default file.
-    The resolution is cached so every operation uses the same DB file.
+    Non-SQLite URLs (e.g. Postgres) are returned unchanged. The resolution is
+    cached so every operation uses the same DB file.
     """
     if not url.startswith("sqlite:///"):
         return url
     if url in _sqlite_path_cache:
         return _sqlite_path_cache[url]
     path = url[len("sqlite:///") :]
-    if not path:
+    if not path or path == ":memory:" or "mode=memory" in path:
+        # Empty path and in-memory DBs must never be rewritten to a file.
         _sqlite_path_cache[url] = url
         return url
-    parent = os.path.dirname(os.path.abspath(path))
-    if os.access(parent, os.W_OK):
-        _sqlite_path_cache[url] = url
-        return url
-    # Cloud: fall back to a writable temp location (ephemeral per run).
-    import tempfile
-
-    fallback_dir = tempfile.mkdtemp(prefix="ops-autopilot-")
-    fallback = os.path.join(fallback_dir, os.path.basename(path) or "ops_autopilot.db")
-    resolved = "sqlite:///" + fallback
+    resolved_path = _writable_file(path, "ops_autopilot.db")
+    resolved = url if resolved_path == path else "sqlite:///" + resolved_path
     _sqlite_path_cache[url] = resolved
-    logger.warning("DB dir %s not writable; using %s (ephemeral)", parent, fallback)
     return resolved
 
 
 def resolve_database_url() -> str:
+    """The active DB URL.
+
+    Set ``DATABASE_URL`` to a managed Postgres for persistent storage on an
+    ephemeral host (e.g. ``postgresql+psycopg://user:pass@host:5432/db``);
+    otherwise the SQLite default is used, with a writable-dir fallback.
+    """
     return _resolve_sqlite_path(os.getenv("DATABASE_URL") or settings.database_url)
 
 
@@ -227,9 +255,14 @@ def delete_analysis(analysis_id: int, user_id: int | None, url: Optional[str] = 
 
 
 def checkpoint_db_path() -> str:
-    """SQLite file path for the LangGraph checkpointer (same DB as app tables)."""
+    """SQLite file path for the LangGraph checkpointer.
+
+    With a SQLite app DB the checkpointer shares that file. With a non-SQLite
+    backend (e.g. Postgres) the checkpointer still uses a local SQLite file;
+    keep it writable so a read-only working directory does not break resume.
+    """
     url = resolve_database_url()
     if url.startswith("sqlite:///"):
         return url[len("sqlite:///") :]
-    # Non-sqlite backend: keep checkpoints in a sibling local file.
-    return str(os.getenv("CHECKPOINT_DB", "ops_autopilot_checkpoints.db"))
+    # Non-sqlite backend: keep checkpoints in a writable local file.
+    return _writable_file(os.getenv("CHECKPOINT_DB") or "ops_autopilot_checkpoints.db", "ops_autopilot_checkpoints.db")
