@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     ollama_base_url: str = Field(default="http://localhost:11434", description="Ollama server URL")
     ollama_model: str = Field(default="qwen2.5:3b", description="Ollama model id")
 
+    # Jina Reader Configuration (optional; lifts the r.jina.ai rate limit)
+    jina_api_key: str = Field(default="", description="Optional Jina Reader API key for website analysis")
+
     # App Configuration
     app_secret: str = Field(default="", description="Secret for session / password pepper (optional in dev)")
     database_url: str = Field(default="sqlite:///./ops_autopilot.db", description="Database connection URL")

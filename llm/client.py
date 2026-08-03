@@ -163,15 +163,7 @@ class GroqClient(LLMClient):
         return [Task(**item) for item in data]
 
     def analyze_website(self, url: str, locale: str = "fr") -> dict:
-        from llm.prompts import ANALYZE_WEBSITE_PROMPT
-
-        page = crawl_site_pages(url)
-        prompt = ANALYZE_WEBSITE_PROMPT.get(locale, ANALYZE_WEBSITE_PROMPT["en"]).format(url=url, page=page)
-        raw = self._complete(prompt)
-        data = _extract_json(raw, expect_array=False)
-        if not isinstance(data, dict):
-            raise ValueError("response is not a JSON object")
-        return _normalize_website_profile(data)
+        return _analyze_website_llm(self, url, locale=locale)
 
     def deep_dive(self, scored_tasks: list[ScoredTask], assumptions: Assumptions) -> list[DeepDive]:
         dives = []
@@ -258,15 +250,7 @@ class OllamaClient(LLMClient):
         return [Task(**item) for item in data]
 
     def analyze_website(self, url: str, locale: str = "fr") -> dict:
-        from llm.prompts import ANALYZE_WEBSITE_PROMPT
-
-        page = crawl_site_pages(url)
-        prompt = ANALYZE_WEBSITE_PROMPT.get(locale, ANALYZE_WEBSITE_PROMPT["en"]).format(url=url, page=page)
-        raw = self._complete(prompt)
-        data = _extract_json(raw, expect_array=False)
-        if not isinstance(data, dict):
-            raise ValueError("response is not a JSON object")
-        return _normalize_website_profile(data)
+        return _analyze_website_llm(self, url, locale=locale)
 
     def deep_dive(self, scored_tasks: list[ScoredTask], assumptions: Assumptions) -> list[DeepDive]:
         dives = []
@@ -366,29 +350,100 @@ def fetch_page_text(url: str, timeout: float = 15.0, max_chars: int = 6000) -> s
     return _strip_html(resp.text, max_chars=max_chars)
 
 
+def fetch_page_markdown(url: str, timeout: float = 40.0, max_chars: int = 6000) -> str:
+    """Fetch a page through the Jina Reader (r.jina.ai) and return markdown.
+
+    Jina renders JavaScript and returns clean markdown, which unblocks
+    modern sites whose content is invisible to a plain httpx GET (the page
+    shell is empty until JS runs). Falls back to the plain text fetcher when
+    the reader is unreachable, so the pipeline never hard-fails.
+    """
+    headers = {"X-Respond-With": "markdown"}
+    try:
+        from config import settings
+
+        if settings.jina_api_key:
+            headers["Authorization"] = f"Bearer {settings.jina_api_key}"
+    except Exception:
+        pass
+    try:
+        resp = httpx.get(
+            f"https://r.jina.ai/{url}",
+            headers=headers,
+            timeout=timeout,
+            follow_redirects=True,
+        )
+        if resp.status_code == 200 and resp.text.strip():
+            return resp.text[:max_chars]
+        logger.warning("jina reader returned status %s for %s; falling back to plain fetch", resp.status_code, url)
+    except Exception as exc:
+        logger.warning("jina reader unavailable for %s (%s); falling back to plain fetch", url, exc)
+    return fetch_page_text(url, max_chars=max_chars)
+
+
 _SITE_PATHS = [
-    "/about",
-    "/about-us",
-    "/contact",
-    "/contact-us",
-    "/help",
-    "/support",
-    "/faq",
+    "/pages/shipping",
+    "/pages/returns",
     "/shipping-returns",
     "/shipping",
     "/returns",
+    "/pages/faq",
+    "/faq",
+    "/help",
+    "/support",
+    "/pages/contact",
+    "/contact",
+    "/contact-us",
+    "/pages/about",
+    "/about",
+    "/about-us",
     "/careers",
     "/jobs",
     "/team",
 ]
 
 
+def _body_key(text: str) -> str:
+    """Fingerprint the real content, ignoring the Jina/HTML header block."""
+    if "Markdown Content:" in text:
+        text = text.split("Markdown Content:", 1)[1]
+    # skip the promo/nav banner that repeats on every page
+    for marker in ("Skip To Main", "Score free shipping", "Get a free", "Skip to main"):
+        idx = text.find(marker)
+        if idx != -1:
+            text = text[idx + len(marker) :]
+            break
+    return text[:200]
+
+
+def _is_error_page(text: str) -> bool:
+    """Jina returns a small '404 Not Found' page for missing URLs."""
+    low = text.lower()
+    return "404 not found" in low or "404:" in low or "target url returned error" in low
+
+
+def _strip_markdown(raw: str, max_chars: int = 6000) -> str:
+    """Reduce Jina markdown to readable text: drop images, links, headers.
+
+    Jina output is verbose (logos, image URLs, nav). The operational signal
+    (policy prose, contact methods) sits between the noise, so we strip it
+    before the page text reaches the LLM.
+    """
+    text = re.sub(r"!\[.*?\]\(.*?\)", " ", raw)          # images
+    text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text)  # link text only
+    text = re.sub(r"[*_>`#]{1,}", " ", text)              # markdown markers
+    text = re.sub(r"^\s*[-•]\s*", " ", text, flags=re.M)  # list bullets
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()[:max_chars]
+
+
 def crawl_site_pages(url: str, max_pages: int = 5, per_page: int = 3500) -> str:
     """Fetch the homepage plus likely operational sub-pages and aggregate.
 
-    Returns labelled, de-duplicated text so the analysis sees real signals
-    (contact methods, shipping/returns policy, team size, FAQ) instead of a
-    marketing-only homepage.
+    Uses the Jina Reader for rendered markdown (unblocks JS-only sites),
+    falling back to plain HTML fetch. Returns labelled, de-duplicated text
+    so the analysis sees real signals (contact methods, shipping/returns
+    policy, team size, FAQ) instead of a marketing-only homepage.
     """
     base = url.rstrip("/")
     sections = []
@@ -398,18 +453,20 @@ def crawl_site_pages(url: str, max_pages: int = 5, per_page: int = 3500) -> str:
         if len(sections) >= max_pages:
             break
         try:
-            text = fetch_page_text(page, max_chars=per_page)
+            text = fetch_page_markdown(page, max_chars=per_page)
         except Exception:
             continue
-        if not text.strip():
+        if not text.strip() or _is_error_page(text):
             continue
         # de-dupe near-identical pages (many sites render the same shell)
-        key = text[:200]
+        key = _body_key(text)
         if key in seen:
             continue
         seen.add(key)
         label = page.replace(base, "").strip("/") or "home"
-        sections.append(f"=== {label} ===\n{text}")
+        sections.append(f"=== {label} ===\n{_strip_markdown(text, max_chars=per_page)}")
+        # stay under the public r.jina.ai rate limit between requests
+        time.sleep(1.0)
     return "\n\n".join(sections) or ""
 
 
@@ -525,6 +582,31 @@ def _normalize_deep_dive(data: dict, task_name: str) -> dict:
         "pilot_plan": as_text(data.get("pilot_plan")),
         "task_name": task_name,
     }
+
+
+def _analyze_website_llm(client: LLMClient, url: str, locale: str = "fr") -> dict:
+    """Crawl a site and have the LLM extract a brand profile, with a retry.
+
+    Small local models occasionally answer non-JSON; one retry smooths that.
+    The crawl is done once and reused across attempts to avoid hammering the
+    reader or the site.
+    """
+    from llm.prompts import ANALYZE_WEBSITE_PROMPT
+
+    page = crawl_site_pages(url)
+    prompt = ANALYZE_WEBSITE_PROMPT.get(locale, ANALYZE_WEBSITE_PROMPT["en"]).format(url=url, page=page)
+    last_error: Optional[Exception] = None
+    for attempt in range(2):
+        try:
+            raw = client._complete(prompt)
+            data = _extract_json(raw, expect_array=False)
+            if not isinstance(data, dict):
+                raise ValueError("response is not a JSON object")
+            return _normalize_website_profile(data)
+        except (ValueError, json.JSONDecodeError, KeyError, TypeError) as exc:
+            last_error = exc
+            logger.warning("website analysis attempt %d failed (%s); retrying", attempt + 1, exc)
+    raise ValueError(f"website analysis failed: {last_error}") from last_error
 
 
 def _normalize_website_profile(data: dict) -> dict:

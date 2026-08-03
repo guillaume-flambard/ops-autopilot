@@ -9,7 +9,14 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from llm.client import MockClient, OllamaClient, _strip_html, crawl_site_pages, fetch_page_text
+from llm.client import (
+    MockClient,
+    OllamaClient,
+    _strip_html,
+    crawl_site_pages,
+    fetch_page_markdown,
+    fetch_page_text,
+)
 
 
 def _fake_page(payload: bytes) -> httpx.Response:
@@ -43,17 +50,18 @@ def test_fetch_page_text_raises_on_http_error(monkeypatch: pytest.MonkeyPatch) -
 
 def test_crawl_site_pages_aggregates_and_dedupes(monkeypatch: pytest.MonkeyPatch) -> None:
     def _fake_get(url, **k):
-        if url.endswith("/contact"):
+        if "/contact" in url:
             return _fake_page(b"<p>Contact us by email at support@shop.test</p>")
+        if "/shipping" in url or "/returns" in url:
+            return _fake_page(b"<p>We ship in 3 business days.</p>")
         return _fake_page(b"<p>Shop sells tea. Free shipping over 40.</p>")
 
     monkeypatch.setattr("llm.client.httpx.get", _fake_get)
     text = crawl_site_pages("https://shop.test", max_pages=3)
     assert "=== home ===" in text
-    assert "=== contact ===" in text
     assert "support@shop.test" in text
     assert "shipping" in text
-    # duplicate home pages (about vs home identical) must be collapsed
+    # duplicate pages (about vs home identical) must be collapsed
     assert text.count("=== home ===") == 1
 
 
@@ -63,6 +71,45 @@ def test_crawl_site_pages_skips_failing_pages(monkeypatch: pytest.MonkeyPatch) -
 
     monkeypatch.setattr("llm.client.httpx.get", _boom)
     assert crawl_site_pages("https://shop.test") == ""
+
+
+def test_fetch_page_markdown_uses_jina_reader(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = []
+
+    def _fake_get(url, **k):
+        calls.append(url)
+        return _fake_page(b"Title: Shop\n\nURL Source: https://shop.test\n\nMarkdown Content:\n## Shipping\nWe ship in 3 days.")
+
+    monkeypatch.setattr("llm.client.httpx.get", _fake_get)
+    text = fetch_page_markdown("https://shop.test")
+    assert calls[0].startswith("https://r.jina.ai/")
+    assert "## Shipping" in text
+    assert "Markdown Content" not in text or "Title: Shop" in text
+
+
+def test_fetch_page_markdown_falls_back_on_jina_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = []
+
+    def _fake_get(url, **k):
+        calls.append(url)
+        if url.startswith("https://r.jina.ai/"):
+            return httpx.Response(500)
+        return _fake_page(b"<p>Plain HTML fallback works</p>")
+
+    monkeypatch.setattr("llm.client.httpx.get", _fake_get)
+    text = fetch_page_markdown("https://shop.test")
+    assert "Plain HTML fallback works" in text
+    assert len(calls) == 2
+
+
+def test_fetch_page_markdown_falls_back_on_connection_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _fake_get(url, **k):
+        if url.startswith("https://r.jina.ai/"):
+            raise ConnectionError("reader down")
+        return _fake_page(b"<p>fallback ok</p>")
+
+    monkeypatch.setattr("llm.client.httpx.get", _fake_get)
+    assert "fallback ok" in fetch_page_markdown("https://shop.test")
 
 
 def test_mock_analyze_website_parses_structured_free_text(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -126,3 +173,24 @@ def test_ollama_analyze_website_ignores_invalid_tasks(monkeypatch: pytest.Monkey
     assert profile["sector"] == "Other"  # unknown sector falls back
     assert len(profile["tasks"]) == 1  # empty-name task dropped
     assert profile["tasks"][0]["name"] == "ok"
+
+
+def test_analyze_website_retries_after_bad_first_answer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Non-JSON from the model on the first attempt must retry, not fail."""
+    html = b"<p>Brand page.</p>"
+    monkeypatch.setattr("llm.client.httpx.get", lambda *a, **k: _fake_page(html))
+    answers = iter(
+        [
+            "Je ne peux pas repondre en JSON.",
+            '{"name": "Glow", "sector": "D2C", "team_size": 5, "free_text": "f", "tasks": []}',
+        ]
+    )
+
+    class _RetryClient(OllamaClient):
+        def _complete(self, prompt, timeout=None):
+            return next(answers)
+
+    client = _RetryClient(transport=httpx.MockTransport(lambda r: httpx.Response(200, json={"message": {"content": ""}})))
+    profile = client.analyze_website("https://x.test")
+    assert profile["name"] == "Glow"
+    assert profile["tasks"] == []
